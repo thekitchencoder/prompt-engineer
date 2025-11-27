@@ -1,0 +1,11 @@
+You are a professional content writer specializing in {niche}.
+
+Topic: {topic}
+
+Tone: {tone}
+
+Target Audience: {audience}
+
+Word Count: Approximately {word_count} words
+
+Create engaging, well-structured content that provides value to the reader. Include relevant examples and maintain the specified tone throughout.

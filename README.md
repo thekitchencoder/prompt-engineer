@@ -5,9 +5,10 @@ A Gradio-based web app for rapid AI prompt iteration. Test and refine your promp
 ## Features
 
 - **Live Prompt Editing**: Modify prompts on the fly and test immediately
-- **Variable Substitution**: Use JSON variables to keep inputs fixed while iterating
-- **Template Management**: Save and load your prompt templates
-- **Model Selection**: Test across different OpenAI models (GPT-4o, GPT-4 Turbo, GPT-3.5)
+- **File-Based Variables**: Load large markdown, YAML, or code files as variables
+- **Template Management**: Save and load your prompt templates with variable configs
+- **Multiple AI Providers**: Works with OpenAI, Ollama, LM Studio, vLLM, OpenRouter, and any OpenAI-compatible API
+- **Custom Models**: Configure any models via environment variables or enter custom model names
 - **Parameter Control**: Adjust temperature and max tokens
 - **No Restart Required**: Edit and test instantly
 
@@ -18,10 +19,10 @@ A Gradio-based web app for rapid AI prompt iteration. Test and refine your promp
 pip install -r requirements.txt
 ```
 
-2. Create a `.env` file with your OpenAI API key:
+2. Configure your AI provider:
 ```bash
 cp .env.example .env
-# Edit .env and add your API key
+# Edit .env and configure for your provider (see below)
 ```
 
 3. Run the app:
@@ -30,6 +31,48 @@ python app.py
 ```
 
 4. Open your browser to `http://localhost:7860`
+
+### Provider Configuration
+
+The app works with any OpenAI-compatible API. Configure via `.env` file:
+
+**OpenAI (default)**:
+```bash
+OPENAI_API_KEY=sk-...
+```
+
+**Ollama (local)**:
+```bash
+OPENAI_API_KEY=not-needed
+OPENAI_BASE_URL=http://localhost:11434/v1
+PROVIDER_NAME=Ollama
+AVAILABLE_MODELS=llama3.2,mistral,codellama,phi3
+```
+
+**LM Studio (local)**:
+```bash
+OPENAI_API_KEY=not-needed
+OPENAI_BASE_URL=http://localhost:1234/v1
+PROVIDER_NAME=LM Studio
+```
+
+**OpenRouter**:
+```bash
+OPENAI_API_KEY=sk-or-v1-...
+OPENAI_BASE_URL=https://openrouter.ai/api/v1
+PROVIDER_NAME=OpenRouter
+AVAILABLE_MODELS=anthropic/claude-3.5-sonnet,openai/gpt-4o
+```
+
+**vLLM or any OpenAI-compatible endpoint**:
+```bash
+OPENAI_API_KEY=your-key-or-not-needed
+OPENAI_BASE_URL=http://your-endpoint:port/v1
+PROVIDER_NAME=Your Provider
+AVAILABLE_MODELS=model1,model2,model3
+```
+
+You can also enter custom model names directly in the UI dropdown.
 
 ## Usage
 
@@ -146,13 +189,22 @@ component:value:authentication system
 focus_areas:value:scalability and security
 ```
 
-## Extending to Other AI APIs
+## Environment Variables
 
-The app is designed to be extensible. To add support for other AI APIs:
+The app is configured via environment variables in `.env`:
 
-1. Create a new function similar to `call_openai()` in `app.py`
-2. Add the new API to the model dropdown
-3. Update the `test_prompt()` function to route to the appropriate API
+| Variable | Description | Default | Required |
+|----------|-------------|---------|----------|
+| `OPENAI_API_KEY` | API key for your provider | - | Yes (except local) |
+| `OPENAI_BASE_URL` | Base URL for OpenAI-compatible API | None (uses OpenAI) | No |
+| `PROVIDER_NAME` | Display name in UI | "OpenAI" | No |
+| `AVAILABLE_MODELS` | Comma-separated list of models | OpenAI models | No |
+
+**Notes:**
+- For local models (Ollama, LM Studio), set `OPENAI_API_KEY=not-needed`
+- If `AVAILABLE_MODELS` is not set, uses default OpenAI models
+- You can always type custom model names in the UI dropdown
+- The app works with any service that implements the OpenAI Chat Completions API
 
 ## Project Structure
 

@@ -8,16 +8,33 @@ import re
 # Load environment variables
 load_dotenv()
 
-# Initialize OpenAI client
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# Initialize OpenAI-compatible client with configurable base URL
+api_key = os.getenv("OPENAI_API_KEY", "not-needed")  # Some local models don't need a key
+base_url = os.getenv("OPENAI_BASE_URL", None)  # e.g., "http://localhost:11434/v1" for Ollama
 
-# Available models
-MODELS = [
+# Initialize client with optional base_url
+if base_url:
+    client = OpenAI(api_key=api_key, base_url=base_url)
+else:
+    client = OpenAI(api_key=api_key)
+
+# Get available models from environment or use defaults
+default_models = [
     "gpt-4o",
     "gpt-4o-mini",
     "gpt-4-turbo",
     "gpt-3.5-turbo",
 ]
+
+# Load models from environment variable (comma-separated list)
+models_env = os.getenv("AVAILABLE_MODELS", None)
+if models_env:
+    MODELS = [model.strip() for model in models_env.split(",")]
+else:
+    MODELS = default_models
+
+# Get provider name for display
+PROVIDER_NAME = os.getenv("PROVIDER_NAME", "OpenAI")
 
 def extract_variables(template: str) -> list:
     """Extract variable names from a prompt template."""
@@ -106,8 +123,8 @@ def format_prompt(template: str, var_config_text: str) -> str:
     except Exception as e:
         return f"Error formatting prompt: {e}"
 
-def call_openai(prompt: str, model: str, temperature: float, max_tokens: int) -> str:
-    """Call OpenAI API with the given prompt and parameters."""
+def call_llm_api(prompt: str, model: str, temperature: float, max_tokens: int) -> str:
+    """Call OpenAI-compatible API with the given prompt and parameters."""
     try:
         response = client.chat.completions.create(
             model=model,
@@ -117,7 +134,7 @@ def call_openai(prompt: str, model: str, temperature: float, max_tokens: int) ->
         )
         return response.choices[0].message.content
     except Exception as e:
-        return f"Error calling OpenAI API: {e}"
+        return f"Error calling {PROVIDER_NAME} API: {e}"
 
 def test_prompt_handler(template: str, var_config: str, model: str, temperature: float, max_tokens: int):
     """Test the prompt with variable configurations."""
@@ -126,7 +143,7 @@ def test_prompt_handler(template: str, var_config: str, model: str, temperature:
     if formatted_prompt.startswith("Error"):
         return formatted_prompt, formatted_prompt, ""
 
-    response = call_openai(formatted_prompt, model, temperature, max_tokens)
+    response = call_llm_api(formatted_prompt, model, temperature, max_tokens)
     return formatted_prompt, response, ""
 
 def save_template(template: str, var_config: str, name: str):
@@ -182,7 +199,7 @@ def list_templates():
 
 # Create Gradio interface
 with gr.Blocks(title="Prompt Engineer", theme=gr.themes.Soft()) as demo:
-    gr.Markdown("# 🎯 Prompt Engineer")
+    gr.Markdown(f"# 🎯 Prompt Engineer ({PROVIDER_NAME})")
     gr.Markdown("Iterate on AI prompts with file-based or fixed variables - no restart needed!")
 
     with gr.Row():
@@ -215,8 +232,9 @@ with gr.Blocks(title="Prompt Engineer", theme=gr.themes.Soft()) as demo:
             with gr.Row():
                 model_dropdown = gr.Dropdown(
                     choices=MODELS,
-                    value=MODELS[0],
-                    label="Model"
+                    value=MODELS[0] if MODELS else "",
+                    label="Model",
+                    allow_custom_value=True
                 )
 
             with gr.Row():

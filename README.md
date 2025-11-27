@@ -39,25 +39,48 @@ python app.py
    ```
    You are a {role}.
 
+   Context: {background}
+
    Task: {task}
    ```
 
-2. **Define Variables**: Input as JSON
-   ```json
-   {
-     "role": "helpful assistant",
-     "task": "Explain quantum computing"
-   }
+2. **Configure Variables**: Define each variable as either a fixed value or file reference
+   ```
+   # Click "🔍 Generate Variable Config" to auto-generate template
+   role:value:helpful assistant
+   background:file:variables/company_context.md
+   task:value:Explain quantum computing
    ```
 
 3. **Test**: Click "🚀 Test Prompt" to see the formatted prompt and API response
 
-4. **Iterate**: Modify the template and test again - no restart needed!
+4. **Iterate**: Modify the template or variables and test again - no restart needed!
+
+### Variable Configuration Format
+
+Variables can be defined in two ways:
+
+**Fixed Value:**
+```
+variable_name:value:Your text content here
+```
+
+**File Reference (for large markdown/YAML/code):**
+```
+variable_name:file:path/to/your/file.md
+```
+
+This is perfect for:
+- Large markdown documentation
+- YAML configuration files
+- Code snippets
+- Data structures
+- Any content you want to keep in separate files
 
 ### Template Management
 
-- **Save**: Give your template a name and click "💾 Save"
-- **Load**: Enter a template name and click "📂 Load"
+- **Save**: Give your template a name and click "💾 Save" (saves both template and variable config)
+- **Load**: Enter a template name and click "📂 Load" (loads both)
 - **List**: Click "📋 List" to see all saved templates
 
 ### Model Parameters
@@ -68,7 +91,7 @@ python app.py
 
 ## Example Templates
 
-### Customer Support
+### Simple Example - Customer Support
 ```
 You are a friendly customer support agent for {company}.
 
@@ -78,31 +101,49 @@ Provide a helpful and empathetic response.
 ```
 
 Variables:
-```json
-{
-  "company": "Acme Corp",
-  "issue": "I received a damaged product"
-}
+```
+company:value:Acme Corp
+issue:value:I received a damaged product
 ```
 
-### Code Review
+### Advanced Example - Product Announcement with File-Based Context
 ```
-You are an expert {language} developer.
+You are a professional marketing copywriter.
 
-Review this code and provide feedback:
+Company Context:
+{context}
 
-{code}
+Write a compelling product announcement for: {feature_name}
+
+Target channel: {channel}
+Tone: {tone}
+```
+
+Variables:
+```
+context:file:variables/sample_context.md
+feature_name:value:AI-Powered Workflow Suggestions
+channel:value:email newsletter
+tone:value:professional yet friendly
+```
+
+### Technical Spec with YAML Requirements
+```
+You are a senior software architect.
+
+Project Requirements:
+{requirements}
+
+Create a technical specification for {component}.
 
 Focus on: {focus_areas}
 ```
 
 Variables:
-```json
-{
-  "language": "Python",
-  "code": "def add(a, b):\n    return a + b",
-  "focus_areas": "performance and best practices"
-}
+```
+requirements:file:variables/sample_requirements.yaml
+component:value:authentication system
+focus_areas:value:scalability and security
 ```
 
 ## Extending to Other AI APIs
@@ -117,13 +158,34 @@ The app is designed to be extensible. To add support for other AI APIs:
 
 ```
 prompt-engineer/
-├── app.py              # Main Gradio application
-├── requirements.txt    # Python dependencies
-├── .env.example        # Environment template
-├── .env               # Your API keys (git-ignored)
-├── templates/         # Saved prompt templates
-└── README.md          # This file
+├── app.py                    # Main Gradio application
+├── requirements.txt          # Python dependencies
+├── .env.example              # Environment template
+├── .env                      # Your API keys (git-ignored)
+├── templates/                # Saved prompt templates
+│   ├── *.txt                # Template files
+│   └── *.vars               # Variable configuration files
+├── variables/                # Reusable variable content files
+│   ├── sample_context.md    # Example: company/product context
+│   ├── sample_requirements.yaml  # Example: YAML specifications
+│   ├── sample_code.py       # Example: code to review
+│   └── sample_data.md       # Example: data for analysis
+└── README.md                 # This file
 ```
+
+### Sample Files Included
+
+The project includes sample variable files to get you started:
+
+- **variables/sample_context.md** - Company and product context
+- **variables/sample_requirements.yaml** - Technical requirements in YAML
+- **variables/sample_code.py** - Python code for review
+- **variables/sample_data.md** - Business data for analysis
+
+Load the included templates to see how these work:
+- `product_announcement` - Uses file-based company context
+- `technical_spec` - Uses YAML requirements file
+- `data_analysis` - Uses markdown data file
 
 ## License
 

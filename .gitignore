@@ -209,3 +209,9 @@ __marimo__/
 # Gradio
 gradio_cached_examples/
 flagged/
+/.idea/inspectionProfiles/profiles_settings.xml
+/.idea/.gitignore
+/.idea/misc.xml
+/.idea/modules.xml
+/.idea/prompt-engineer.iml
+/.idea/vcs.xml

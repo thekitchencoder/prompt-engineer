@@ -289,9 +289,7 @@ def list_templates():
     return "Available templates:\n" + "\n".join(f"  - {t}" for t in templates)
 
 # Create Gradio interface
-with gr.Blocks(title="Prompt Engineer", theme=gr.themes.Soft(), css="""
-    .config-header { display: flex; align-items: center; justify-content: space-between; }
-""") as demo:
+with gr.Blocks(title="Prompt Engineer") as demo:
 
     # Header with settings button
     with gr.Row():
@@ -489,4 +487,10 @@ with gr.Blocks(title="Prompt Engineer", theme=gr.themes.Soft(), css="""
     )
 
 if __name__ == "__main__":
-    demo.launch(server_name="0.0.0.0", server_port=7860)
+    demo.launch(
+        server_name="0.0.0.0",
+        server_port=7860,
+        theme=gr.themes.Soft(),
+        css="""
+        .config-header { display: flex; align-items: center; justify-content: space-between; }
+    """)

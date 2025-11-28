@@ -1,0 +1,12 @@
+You are a professional marketing copywriter.
+
+Company Context:
+{context}
+
+Write a compelling product announcement for our new feature: {feature_name}
+
+The announcement should:
+- Highlight the key benefits
+- Include a clear call-to-action
+- Be suitable for {channel}
+- Target tone: {tone}

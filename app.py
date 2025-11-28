@@ -54,6 +54,7 @@ config_state = {
     "base_url": os.getenv("OPENAI_BASE_URL", ""),
     "provider_name": os.getenv("PROVIDER_NAME", "OpenAI"),
     "models": os.getenv("AVAILABLE_MODELS", ""),
+    "default_model": os.getenv("DEFAULT_MODEL", ""),
     "temperature": float(os.getenv("DEFAULT_TEMPERATURE", "0.7")),
     "max_tokens": int(os.getenv("DEFAULT_MAX_TOKENS", "1000"))
 }
@@ -65,7 +66,7 @@ def needs_configuration():
     # Consider configured if API key is set or base URL is set (for local models)
     return not api_key and not os.getenv("OPENAI_BASE_URL")
 
-def save_config_to_env(api_key, base_url, provider_name, models, temperature, max_tokens):
+def save_config_to_env(api_key, base_url, provider_name, models, default_model, temperature, max_tokens):
     """Save configuration to .env file."""
     env_file = find_dotenv()
     if not env_file:
@@ -79,6 +80,7 @@ def save_config_to_env(api_key, base_url, provider_name, models, temperature, ma
     set_key(env_file, "OPENAI_BASE_URL", base_url or "")
     set_key(env_file, "PROVIDER_NAME", provider_name or "OpenAI")
     set_key(env_file, "AVAILABLE_MODELS", models or "")
+    set_key(env_file, "DEFAULT_MODEL", default_model or "")
     set_key(env_file, "DEFAULT_TEMPERATURE", str(temperature))
     set_key(env_file, "DEFAULT_MAX_TOKENS", str(max_tokens))
 
@@ -87,6 +89,7 @@ def save_config_to_env(api_key, base_url, provider_name, models, temperature, ma
     config_state["base_url"] = base_url or ""
     config_state["provider_name"] = provider_name or "OpenAI"
     config_state["models"] = models or ""
+    config_state["default_model"] = default_model or ""
     config_state["temperature"] = temperature
     config_state["max_tokens"] = max_tokens
 
@@ -388,11 +391,14 @@ with gr.Blocks(title="Prompt Engineer") as demo:
         gr.Markdown("### Model Settings (Defaults)")
 
         with gr.Row():
+            # Use saved default_model from config, or fallback to first available model
+            default_model_value = config_state["default_model"] or (MODELS[0] if MODELS else "")
             config_model_dropdown = gr.Dropdown(
                 choices=MODELS,
-                value=MODELS[0] if MODELS else "",
+                value=default_model_value,
                 label="Default Model",
-                allow_custom_value=True
+                allow_custom_value=True,
+                info="Select which model to use by default for testing prompts"
             )
 
         with gr.Row():
@@ -513,12 +519,12 @@ with gr.Blocks(title="Prompt Engineer") as demo:
             )
 
     def save_config_with_models(api_key, base_url, provider_name, selected_models_list,
-                               temperature, max_tokens):
+                               default_model, temperature, max_tokens):
         """Save configuration with selected models."""
         # Convert list to comma-separated string
         models_str = ",".join(selected_models_list) if selected_models_list else ""
         return save_config_to_env(api_key, base_url, provider_name, models_str,
-                                 temperature, max_tokens)
+                                 default_model, temperature, max_tokens)
 
     def update_default_model_choices(selected_models_list):
         """Update the default model dropdown when selected models change."""
@@ -550,7 +556,7 @@ with gr.Blocks(title="Prompt Engineer") as demo:
     save_config_btn.click(
         fn=save_config_with_models,
         inputs=[api_key_input, base_url_input, provider_dropdown, selected_models,
-                config_temperature_slider, config_max_tokens_slider],
+                config_model_dropdown, config_temperature_slider, config_max_tokens_slider],
         outputs=[config_status]
     )
 
@@ -568,10 +574,15 @@ with gr.Blocks(title="Prompt Engineer") as demo:
 
     def test_with_config(template, var_config):
         """Test prompt using configuration state."""
+        # Use configured default_model, or fallback to first available model
+        model = config_state.get("default_model") or (
+            config_state.get("models", "").split(",")[0] if config_state.get("models")
+            else MODELS[0] if MODELS else "gpt-4o"
+        )
         return test_prompt_handler(
             template,
             var_config,
-            config_state.get("models", "").split(",")[0] if config_state.get("models") else MODELS[0],
+            model,
             config_state["temperature"],
             config_state["max_tokens"]
         )

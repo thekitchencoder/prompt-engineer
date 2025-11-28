@@ -101,6 +101,40 @@ def get_provider_preset(provider_name):
         preset["api_key_placeholder"]
     )
 
+def fetch_available_models(api_key, base_url):
+    """
+    Fetch available models from the provider's API.
+    Returns (success: bool, result: list or error message).
+    """
+    try:
+        # Create temporary client with provided credentials
+        temp_client = OpenAI(api_key=api_key or "not-needed", base_url=base_url or None)
+
+        # Fetch models from the API
+        models_response = temp_client.models.list()
+
+        # Extract model IDs
+        model_ids = [model.id for model in models_response.data]
+
+        if not model_ids:
+            return False, "No models found at the specified endpoint"
+
+        # Sort models alphabetically
+        model_ids.sort()
+
+        return True, model_ids
+
+    except Exception as e:
+        error_msg = str(e)
+        if "Connection" in error_msg or "connect" in error_msg.lower():
+            return False, f"Connection failed: Unable to reach {base_url or 'OpenAI API'}. Check the URL and network."
+        elif "401" in error_msg or "Unauthorized" in error_msg:
+            return False, "Authentication failed: Invalid API key"
+        elif "403" in error_msg or "Forbidden" in error_msg:
+            return False, "Access forbidden: Check your API key permissions"
+        else:
+            return False, f"Error fetching models: {error_msg}"
+
 def initialize_client():
     """Initialize the OpenAI client with current configuration."""
     api_key = config_state["api_key"] or "not-needed"
@@ -327,12 +361,28 @@ with gr.Blocks(title="Prompt Engineer") as demo:
                 info="Enter 'not-needed' for local models"
             )
 
+        gr.Markdown("### Available Models")
+
         with gr.Row():
-            models_input = gr.Textbox(
-                label="Available Models (comma-separated)",
-                value=config_state["models"],
-                placeholder="llama3.2,mistral,codellama",
-                info="Leave empty to use provider defaults"
+            load_models_btn = gr.Button("🔄 Load Models from Provider", size="sm")
+            models_status = gr.Textbox(
+                label="Status",
+                value="",
+                scale=2,
+                interactive=False,
+                show_label=False
+            )
+
+        with gr.Row():
+            # Initialize with current models from config
+            current_models = [m.strip() for m in config_state["models"].split(",") if m.strip()]
+            selected_models = gr.Dropdown(
+                choices=current_models,
+                value=current_models,
+                label="Select Models to Use",
+                multiselect=True,
+                allow_custom_value=True,
+                info="Load models from provider or enter custom model names"
             )
 
         gr.Markdown("### Model Settings (Defaults)")
@@ -426,17 +476,80 @@ with gr.Blocks(title="Prompt Engineer") as demo:
     def update_config_from_preset(provider_name):
         """Update configuration inputs when provider preset is selected."""
         base_url, models, api_key_placeholder = get_provider_preset(provider_name)
-        return base_url, models, api_key_placeholder
+        # Convert default models to list for multi-select dropdown
+        models_list = [m.strip() for m in models.split(",") if m.strip()] if models else []
+        default_model = models_list[0] if models_list else None
+        return (
+            base_url,
+            gr.Dropdown(choices=models_list, value=models_list),
+            api_key_placeholder,
+            "",
+            gr.Dropdown(choices=models_list, value=default_model)
+        )
+
+    def load_models_from_provider(api_key, base_url):
+        """Load available models from the provider's API."""
+        if not base_url and not api_key:
+            return (
+                gr.Dropdown(choices=[]),
+                "⚠️ Please configure Base URL and API Key first",
+                gr.Dropdown(choices=[])
+            )
+
+        success, result = fetch_available_models(api_key, base_url)
+
+        if success:
+            default_model = result[0] if result else None
+            return (
+                gr.Dropdown(choices=result, value=result),
+                f"✅ Loaded {len(result)} models successfully",
+                gr.Dropdown(choices=result, value=default_model)
+            )
+        else:
+            return (
+                gr.Dropdown(choices=[]),
+                f"❌ {result}",
+                gr.Dropdown(choices=[])
+            )
+
+    def save_config_with_models(api_key, base_url, provider_name, selected_models_list,
+                               temperature, max_tokens):
+        """Save configuration with selected models."""
+        # Convert list to comma-separated string
+        models_str = ",".join(selected_models_list) if selected_models_list else ""
+        return save_config_to_env(api_key, base_url, provider_name, models_str,
+                                 temperature, max_tokens)
+
+    def update_default_model_choices(selected_models_list):
+        """Update the default model dropdown when selected models change."""
+        if not selected_models_list:
+            return gr.Dropdown(choices=[])
+        return gr.Dropdown(
+            choices=selected_models_list,
+            value=selected_models_list[0] if selected_models_list else None
+        )
 
     provider_dropdown.change(
         fn=update_config_from_preset,
         inputs=[provider_dropdown],
-        outputs=[base_url_input, models_input, api_key_input]
+        outputs=[base_url_input, selected_models, api_key_input, models_status, config_model_dropdown]
+    )
+
+    load_models_btn.click(
+        fn=load_models_from_provider,
+        inputs=[api_key_input, base_url_input],
+        outputs=[selected_models, models_status, config_model_dropdown]
+    )
+
+    selected_models.change(
+        fn=update_default_model_choices,
+        inputs=[selected_models],
+        outputs=[config_model_dropdown]
     )
 
     save_config_btn.click(
-        fn=save_config_to_env,
-        inputs=[api_key_input, base_url_input, provider_dropdown, models_input,
+        fn=save_config_with_models,
+        inputs=[api_key_input, base_url_input, provider_dropdown, selected_models,
                 config_temperature_slider, config_max_tokens_slider],
         outputs=[config_status]
     )

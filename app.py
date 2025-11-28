@@ -1,40 +1,129 @@
 import gradio as gr
 import os
 from openai import OpenAI
-from dotenv import load_dotenv
+from dotenv import load_dotenv, set_key, find_dotenv
 import json
 import re
 
 # Load environment variables
 load_dotenv()
 
-# Initialize OpenAI-compatible client with configurable base URL
-api_key = os.getenv("OPENAI_API_KEY", "not-needed")  # Some local models don't need a key
-base_url = os.getenv("OPENAI_BASE_URL", None)  # e.g., "http://localhost:11434/v1" for Ollama
+# Provider presets for easy configuration
+PROVIDER_PRESETS = {
+    "OpenAI": {
+        "base_url": "",
+        "api_key_required": True,
+        "default_models": "gpt-4o,gpt-4o-mini,gpt-4-turbo,gpt-3.5-turbo",
+        "api_key_placeholder": "sk-..."
+    },
+    "Ollama": {
+        "base_url": "http://localhost:11434/v1",
+        "api_key_required": False,
+        "default_models": "llama3.2,mistral,codellama,phi3",
+        "api_key_placeholder": "not-needed"
+    },
+    "LM Studio": {
+        "base_url": "http://localhost:1234/v1",
+        "api_key_required": False,
+        "default_models": "",
+        "api_key_placeholder": "not-needed"
+    },
+    "OpenRouter": {
+        "base_url": "https://openrouter.ai/api/v1",
+        "api_key_required": True,
+        "default_models": "anthropic/claude-3.5-sonnet,openai/gpt-4o,meta-llama/llama-3.2-90b",
+        "api_key_placeholder": "sk-or-v1-..."
+    },
+    "vLLM": {
+        "base_url": "http://localhost:8000/v1",
+        "api_key_required": False,
+        "default_models": "",
+        "api_key_placeholder": "not-needed"
+    },
+    "Custom": {
+        "base_url": "",
+        "api_key_required": True,
+        "default_models": "",
+        "api_key_placeholder": "your-api-key"
+    }
+}
 
-# Initialize client with optional base_url
-if base_url:
-    client = OpenAI(api_key=api_key, base_url=base_url)
-else:
-    client = OpenAI(api_key=api_key)
+# Global configuration state
+config_state = {
+    "api_key": os.getenv("OPENAI_API_KEY", ""),
+    "base_url": os.getenv("OPENAI_BASE_URL", ""),
+    "provider_name": os.getenv("PROVIDER_NAME", "OpenAI"),
+    "models": os.getenv("AVAILABLE_MODELS", ""),
+    "temperature": float(os.getenv("DEFAULT_TEMPERATURE", "0.7")),
+    "max_tokens": int(os.getenv("DEFAULT_MAX_TOKENS", "1000"))
+}
 
-# Get available models from environment or use defaults
-default_models = [
-    "gpt-4o",
-    "gpt-4o-mini",
-    "gpt-4-turbo",
-    "gpt-3.5-turbo",
-]
+# Check if configuration is needed (first run)
+def needs_configuration():
+    """Check if the app needs initial configuration."""
+    api_key = os.getenv("OPENAI_API_KEY", "")
+    # Consider configured if API key is set or base URL is set (for local models)
+    return not api_key and not os.getenv("OPENAI_BASE_URL")
 
-# Load models from environment variable (comma-separated list)
-models_env = os.getenv("AVAILABLE_MODELS", None)
-if models_env:
-    MODELS = [model.strip() for model in models_env.split(",")]
-else:
-    MODELS = default_models
+def save_config_to_env(api_key, base_url, provider_name, models, temperature, max_tokens):
+    """Save configuration to .env file."""
+    env_file = find_dotenv()
+    if not env_file:
+        env_file = ".env"
+        # Create .env if it doesn't exist
+        with open(env_file, "w") as f:
+            f.write("")
 
-# Get provider name for display
-PROVIDER_NAME = os.getenv("PROVIDER_NAME", "OpenAI")
+    # Update .env file
+    set_key(env_file, "OPENAI_API_KEY", api_key or "not-needed")
+    set_key(env_file, "OPENAI_BASE_URL", base_url or "")
+    set_key(env_file, "PROVIDER_NAME", provider_name or "OpenAI")
+    set_key(env_file, "AVAILABLE_MODELS", models or "")
+    set_key(env_file, "DEFAULT_TEMPERATURE", str(temperature))
+    set_key(env_file, "DEFAULT_MAX_TOKENS", str(max_tokens))
+
+    # Update global config state
+    config_state["api_key"] = api_key or "not-needed"
+    config_state["base_url"] = base_url or ""
+    config_state["provider_name"] = provider_name or "OpenAI"
+    config_state["models"] = models or ""
+    config_state["temperature"] = temperature
+    config_state["max_tokens"] = max_tokens
+
+    return "✅ Configuration saved! Restart the app for changes to take full effect."
+
+def get_provider_preset(provider_name):
+    """Get preset configuration for a provider."""
+    preset = PROVIDER_PRESETS.get(provider_name, PROVIDER_PRESETS["Custom"])
+    return (
+        preset["base_url"],
+        preset["default_models"],
+        preset["api_key_placeholder"]
+    )
+
+def initialize_client():
+    """Initialize the OpenAI client with current configuration."""
+    api_key = config_state["api_key"] or "not-needed"
+    base_url = config_state["base_url"] or None
+
+    if base_url:
+        return OpenAI(api_key=api_key, base_url=base_url)
+    else:
+        return OpenAI(api_key=api_key)
+
+# Initialize client
+client = initialize_client()
+
+# Get available models
+def get_models_list():
+    """Get list of available models from configuration."""
+    models_str = config_state["models"]
+    if models_str:
+        return [model.strip() for model in models_str.split(",")]
+    else:
+        return ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"]
+
+MODELS = get_models_list()
 
 def extract_variables(template: str) -> list:
     """Extract variable names from a prompt template."""
@@ -126,7 +215,9 @@ def format_prompt(template: str, var_config_text: str) -> str:
 def call_llm_api(prompt: str, model: str, temperature: float, max_tokens: int) -> str:
     """Call OpenAI-compatible API with the given prompt and parameters."""
     try:
-        response = client.chat.completions.create(
+        # Reinitialize client in case config changed
+        current_client = initialize_client()
+        response = current_client.chat.completions.create(
             model=model,
             messages=[{"role": "user", "content": prompt}],
             temperature=temperature,
@@ -134,7 +225,7 @@ def call_llm_api(prompt: str, model: str, temperature: float, max_tokens: int) -
         )
         return response.choices[0].message.content
     except Exception as e:
-        return f"Error calling {PROVIDER_NAME} API: {e}"
+        return f"Error calling {config_state['provider_name']} API: {e}"
 
 def test_prompt_handler(template: str, var_config: str, model: str, temperature: float, max_tokens: int):
     """Test the prompt with variable configurations."""
@@ -198,10 +289,85 @@ def list_templates():
     return "Available templates:\n" + "\n".join(f"  - {t}" for t in templates)
 
 # Create Gradio interface
-with gr.Blocks(title="Prompt Engineer", theme=gr.themes.Soft()) as demo:
-    gr.Markdown(f"# 🎯 Prompt Engineer ({PROVIDER_NAME})")
+with gr.Blocks(title="Prompt Engineer", theme=gr.themes.Soft(), css="""
+    .config-header { display: flex; align-items: center; justify-content: space-between; }
+""") as demo:
+
+    # Header with settings button
+    with gr.Row():
+        gr.Markdown(f"# 🎯 Prompt Engineer ({config_state['provider_name']})")
+        settings_btn = gr.Button("⚙️ Settings", size="sm", scale=0)
+
     gr.Markdown("Iterate on AI prompts with file-based or fixed variables - no restart needed!")
 
+    # Configuration Panel (collapsible)
+    with gr.Accordion("⚙️ Configuration", open=needs_configuration()) as config_accordion:
+        gr.Markdown("### Provider Configuration")
+
+        with gr.Row():
+            provider_dropdown = gr.Dropdown(
+                choices=list(PROVIDER_PRESETS.keys()),
+                value=config_state["provider_name"],
+                label="Provider",
+                info="Select a preset or choose 'Custom'"
+            )
+
+        with gr.Row():
+            base_url_input = gr.Textbox(
+                label="Base URL",
+                value=config_state["base_url"],
+                placeholder="Leave empty for OpenAI, or enter custom endpoint",
+                info="e.g., http://localhost:11434/v1 for Ollama"
+            )
+
+        with gr.Row():
+            api_key_input = gr.Textbox(
+                label="API Key",
+                value=config_state["api_key"],
+                placeholder="your-api-key",
+                type="password",
+                info="Enter 'not-needed' for local models"
+            )
+
+        with gr.Row():
+            models_input = gr.Textbox(
+                label="Available Models (comma-separated)",
+                value=config_state["models"],
+                placeholder="llama3.2,mistral,codellama",
+                info="Leave empty to use provider defaults"
+            )
+
+        gr.Markdown("### Model Settings (Defaults)")
+
+        with gr.Row():
+            config_model_dropdown = gr.Dropdown(
+                choices=MODELS,
+                value=MODELS[0] if MODELS else "",
+                label="Default Model",
+                allow_custom_value=True
+            )
+
+        with gr.Row():
+            config_temperature_slider = gr.Slider(
+                minimum=0,
+                maximum=2,
+                value=config_state["temperature"],
+                step=0.1,
+                label="Temperature"
+            )
+
+            config_max_tokens_slider = gr.Slider(
+                minimum=1,
+                maximum=4000,
+                value=config_state["max_tokens"],
+                step=100,
+                label="Max Tokens"
+            )
+
+        save_config_btn = gr.Button("💾 Save Configuration", variant="primary")
+        config_status = gr.Textbox(label="Configuration Status", lines=2)
+
+    # Main UI
     with gr.Row():
         with gr.Column(scale=1):
             gr.Markdown("### 1. Prompt Template")
@@ -228,35 +394,9 @@ with gr.Blocks(title="Prompt Engineer", theme=gr.themes.Soft()) as demo:
                 value="question:value:What is the capital of France?"
             )
 
-            gr.Markdown("### 3. Model Settings")
-            with gr.Row():
-                model_dropdown = gr.Dropdown(
-                    choices=MODELS,
-                    value=MODELS[0] if MODELS else "",
-                    label="Model",
-                    allow_custom_value=True
-                )
-
-            with gr.Row():
-                temperature_slider = gr.Slider(
-                    minimum=0,
-                    maximum=2,
-                    value=0.7,
-                    step=0.1,
-                    label="Temperature"
-                )
-
-                max_tokens_slider = gr.Slider(
-                    minimum=1,
-                    maximum=4000,
-                    value=1000,
-                    step=100,
-                    label="Max Tokens"
-                )
-
             test_button = gr.Button("🚀 Test Prompt", variant="primary", size="lg")
 
-            gr.Markdown("### 4. Template Management")
+            gr.Markdown("### 3. Template Management")
             with gr.Row():
                 template_name_input = gr.Textbox(
                     label="Template Name",
@@ -280,20 +420,54 @@ with gr.Blocks(title="Prompt Engineer", theme=gr.themes.Soft()) as demo:
             gr.Markdown("### API Response")
             response_output = gr.Textbox(
                 label="Model Output",
-                lines=18,
+                lines=20,
                 interactive=False
             )
 
-    # Event handlers
+    # Configuration event handlers
+    def update_config_from_preset(provider_name):
+        """Update configuration inputs when provider preset is selected."""
+        base_url, models, api_key_placeholder = get_provider_preset(provider_name)
+        return base_url, models, api_key_placeholder
+
+    provider_dropdown.change(
+        fn=update_config_from_preset,
+        inputs=[provider_dropdown],
+        outputs=[base_url_input, models_input, api_key_input]
+    )
+
+    save_config_btn.click(
+        fn=save_config_to_env,
+        inputs=[api_key_input, base_url_input, provider_dropdown, models_input,
+                config_temperature_slider, config_max_tokens_slider],
+        outputs=[config_status]
+    )
+
+    settings_btn.click(
+        fn=lambda: gr.Accordion(open=True),
+        outputs=[config_accordion]
+    )
+
+    # Main UI event handlers
     parse_vars_btn.click(
         fn=generate_variable_config_template,
         inputs=[template_input],
         outputs=[var_config_input]
     )
 
+    def test_with_config(template, var_config):
+        """Test prompt using configuration state."""
+        return test_prompt_handler(
+            template,
+            var_config,
+            config_state.get("models", "").split(",")[0] if config_state.get("models") else MODELS[0],
+            config_state["temperature"],
+            config_state["max_tokens"]
+        )
+
     test_button.click(
-        fn=test_prompt_handler,
-        inputs=[template_input, var_config_input, model_dropdown, temperature_slider, max_tokens_slider],
+        fn=test_with_config,
+        inputs=[template_input, var_config_input],
         outputs=[formatted_output, response_output, save_status]
     )
 

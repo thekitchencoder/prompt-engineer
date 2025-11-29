@@ -728,40 +728,58 @@ def create_ui():
         )
 
         # Prompt Editor
-        def load_prompt_for_editing(prompt_name):
-            """Load a prompt for editing."""
+        def load_prompt_for_editing(prompt_name, role):
+            """Load a prompt for editing based on selected role."""
             if not prompt_name:
-                return "", "*No file selected*", "*No variables*", ""
+                return "", "*No file selected*", "*No variables*", "", "", gr.update(choices=["system", "user", "assistant"], value="user")
 
             workspace = workspace_manager.get_current_workspace()
             if not workspace:
-                return "", "*No workspace*", "*No variables*", "❌ No workspace"
+                return "", "*No workspace*", "*No variables*", "", "", gr.update(choices=["system", "user", "assistant"], value="user")
 
             try:
                 prompt_set = workspace.get_prompt_set(prompt_name)
                 if not prompt_set:
-                    return "", "*Not found*", "*No variables*", f"❌ Prompt '{prompt_name}' not found"
+                    return "", "*Not found*", "*No variables*", "", f"❌ Prompt '{prompt_name}' not found", gr.update(choices=["system", "user", "assistant"], value="user")
 
-                # Load first available prompt (single-file or first role)
+                # Load variables if available
+                var_content = ""
+                if prompt_set.var_file:
+                    try:
+                        with open(prompt_set.var_file.path, 'r', encoding='utf-8') as f:
+                            var_content = f.read()
+                    except:
+                        var_content = ""
+
+                # Determine available roles and select appropriate one
+                available_roles = []
+                if 'system' in prompt_set.prompts:
+                    available_roles.append('system')
+                if 'user' in prompt_set.prompts or 'prompt' in prompt_set.prompts:
+                    available_roles.append('user')
+                if 'assistant' in prompt_set.prompts:
+                    available_roles.append('assistant')
+
+                # If requested role not available, pick first available
+                if role not in available_roles and available_roles:
+                    role = available_roles[0]
+
+                # Map role to file (handle single-file prompts)
+                role_key = role
+                if role == 'user' and 'user' not in prompt_set.prompts and 'prompt' in prompt_set.prompts:
+                    role_key = 'prompt'
+
+                # Load prompt content
                 content = ""
                 file_name = ""
 
-                if 'prompt' in prompt_set.prompts:
-                    prompt_file = prompt_set.prompts['prompt']
+                if role_key in prompt_set.prompts:
+                    prompt_file = prompt_set.prompts[role_key]
                     file_name = prompt_file.path.name
-                elif 'user' in prompt_set.prompts:
-                    prompt_file = prompt_set.prompts['user']
-                    file_name = prompt_file.path.name
-                elif 'system' in prompt_set.prompts:
-                    prompt_file = prompt_set.prompts['system']
-                    file_name = prompt_file.path.name
+                    with open(prompt_file.path, 'r', encoding='utf-8') as f:
+                        content = f.read()
                 else:
-                    # Get first available
-                    prompt_file = list(prompt_set.prompts.values())[0]
-                    file_name = prompt_file.path.name
-
-                with open(prompt_file.path, 'r', encoding='utf-8') as f:
-                    content = f.read()
+                    return "", f"*No {role} prompt found*", "*No variables*", var_content, f"⚠️ No {role} prompt for {prompt_name}", gr.update(choices=available_roles, value=available_roles[0] if available_roles else "user")
 
                 # Extract variables
                 vars_list = extract_variables_from_prompt(content)
@@ -769,27 +787,78 @@ def create_ui():
                 if vars_list:
                     vars_md = "**Variables:** " + ", ".join([f"`{{{v}}}`" for v in vars_list])
 
-                file_info = f"📄 `{file_name}`"
+                file_info = f"📄 `{file_name}` | **Role:** {role}"
 
-                return content, file_info, vars_md, f"✅ Loaded {prompt_name}"
+                return content, file_info, vars_md, var_content, f"✅ Loaded {prompt_name} ({role})", gr.update(choices=available_roles, value=role)
 
             except Exception as e:
-                return "", "*Error*", "*No variables*", f"❌ Error: {str(e)}"
+                return "", "*Error*", "*No variables*", "", f"❌ Error: {str(e)}", gr.update(choices=["system", "user", "assistant"], value="user")
 
+        # Trigger load on prompt selection change
         prompt_selector.change(
             fn=load_prompt_for_editing,
-            inputs=[prompt_selector],
-            outputs=[prompt_editor, prompt_file_info, prompt_vars_display, editor_status]
+            inputs=[prompt_selector, prompt_role_selector],
+            outputs=[prompt_editor, prompt_file_info, prompt_vars_display, variables_editor, editor_status, prompt_role_selector]
         )
 
-        # Save prompt (simplified - saves to currently selected file)
-        def save_current_prompt(prompt_name, content):
+        # Trigger load on role change
+        prompt_role_selector.change(
+            fn=load_prompt_for_editing,
+            inputs=[prompt_selector, prompt_role_selector],
+            outputs=[prompt_editor, prompt_file_info, prompt_vars_display, variables_editor, editor_status, prompt_role_selector]
+        )
+
+        # Save prompt to the currently selected role
+        def save_current_prompt(prompt_name, role, content):
             """Save the current prompt content."""
-            return save_prompt_file(prompt_name, "user", content)  # Default to user for now
+            if not prompt_name:
+                return "❌ No prompt selected"
+            return save_prompt_file(prompt_name, role, content)
 
         save_prompt_btn.click(
             fn=save_current_prompt,
-            inputs=[prompt_selector, prompt_editor],
+            inputs=[prompt_selector, prompt_role_selector, prompt_editor],
+            outputs=[editor_status]
+        )
+
+        # Save variables YAML file
+        def save_variables_file(prompt_name, var_content):
+            """Save the variables YAML file."""
+            workspace = workspace_manager.get_current_workspace()
+            if not workspace:
+                return "❌ No workspace open"
+
+            if not prompt_name:
+                return "❌ No prompt selected"
+
+            try:
+                prompt_set = workspace.get_prompt_set(prompt_name)
+                if not prompt_set:
+                    return f"❌ Prompt set '{prompt_name}' not found"
+
+                # Get or create variable file path
+                if prompt_set.var_file:
+                    var_file_path = prompt_set.var_file.path
+                else:
+                    # Create new variable file
+                    config = workspace.config
+                    vars_dir = workspace.root_path / config.layout.vars_dir
+                    vars_dir.mkdir(parents=True, exist_ok=True)
+                    vars_ext = config.layout.vars_extension
+                    var_file_path = vars_dir / f"{prompt_name}{vars_ext}"
+
+                # Write content
+                with open(var_file_path, 'w', encoding='utf-8') as f:
+                    f.write(var_content)
+
+                return f"✅ Saved variables to {var_file_path.name}"
+
+            except Exception as e:
+                return f"❌ Error saving variables: {str(e)}"
+
+        save_vars_btn.click(
+            fn=save_variables_file,
+            inputs=[prompt_selector, variables_editor],
             outputs=[editor_status]
         )
 
@@ -804,6 +873,30 @@ def create_ui():
             fn=update_vars_display,
             inputs=[prompt_editor],
             outputs=[prompt_vars_display]
+        )
+
+        # Create New Prompt Dialog (inline)
+        def handle_create_new_prompt():
+            """Show a simple prompt dialog for creating new prompts."""
+            # For now, we'll use a simple textbox. In future, could add a modal dialog.
+            return "✏️ Enter prompt name below and click 'Create Single File' or 'Create Multi-Role'"
+
+        # Note: For MVP, we'll skip the create dialog UI and handle it in a future update
+        # The create_new_prompt function exists but needs UI components to call it
+
+        # Trigger initial load if a prompt is selected
+        def on_app_load():
+            """Load the first prompt on app startup."""
+            prompt_names = get_prompt_names()
+            if prompt_names:
+                # Load the first prompt
+                return load_prompt_for_editing(prompt_names[0], "user")
+            # Return empty values
+            return "", "*No prompts found*", "*No variables*", "", "", gr.update(choices=["system", "user", "assistant"], value="user")
+
+        app.load(
+            fn=on_app_load,
+            outputs=[prompt_editor, prompt_file_info, prompt_vars_display, variables_editor, editor_status, prompt_role_selector]
         )
 
     return app

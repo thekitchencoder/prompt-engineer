@@ -448,7 +448,9 @@ with gr.Blocks(title="Prompt Engineer") as demo:
                 value="question:value:What is the capital of France?"
             )
 
-            test_button = gr.Button("🚀 Test Prompt", variant="primary", size="lg")
+            with gr.Row():
+                preview_button = gr.Button("🔍 Preview Prompt", size="lg")
+                test_button = gr.Button("🚀 Test Prompt", variant="primary", size="lg")
 
             gr.Markdown("### 3. Template Management")
             with gr.Row():
@@ -572,6 +574,11 @@ with gr.Blocks(title="Prompt Engineer") as demo:
         outputs=[var_config_input]
     )
 
+    def preview_prompt(template, var_config):
+        """Preview the formatted prompt without calling the API."""
+        formatted = format_prompt(template, var_config)
+        return formatted, "", ""
+
     def test_with_config(template, var_config):
         """Test prompt using configuration state."""
         # Use configured default_model, or fallback to first available model
@@ -586,6 +593,12 @@ with gr.Blocks(title="Prompt Engineer") as demo:
             config_state["temperature"],
             config_state["max_tokens"]
         )
+
+    preview_button.click(
+        fn=preview_prompt,
+        inputs=[template_input, var_config_input],
+        outputs=[formatted_output, response_output, save_status]
+    )
 
     test_button.click(
         fn=test_with_config,

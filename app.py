@@ -543,21 +543,21 @@ with gr.Blocks(title="Prompt Engineer") as demo:
         default_model = models_list[0] if models_list else None
         return (
             base_url,
-            gr.Dropdown(choices=models_list, value=models_list),
+            gr.update(choices=models_list, value=models_list),
             api_key_placeholder,
             "",
-            gr.Dropdown(choices=models_list, value=default_model),
-            gr.Dropdown(choices=models_list, value=default_model)
+            gr.update(choices=models_list, value=default_model),
+            gr.update(choices=models_list, value=default_model)
         )
 
     def load_models_from_provider(api_key, base_url):
         """Load available models from the provider's API."""
         if not base_url and not api_key:
             return (
-                gr.Dropdown(choices=[]),
+                gr.update(choices=[]),
                 "⚠️ Please configure Base URL and API Key first",
-                gr.Dropdown(choices=[]),
-                gr.Dropdown(choices=[])
+                gr.update(choices=[]),
+                gr.update(choices=[])
             )
 
         success, result = fetch_available_models(api_key, base_url)
@@ -565,17 +565,17 @@ with gr.Blocks(title="Prompt Engineer") as demo:
         if success:
             default_model = result[0] if result else None
             return (
-                gr.Dropdown(choices=result, value=result),
+                gr.update(choices=result, value=result),
                 f"✅ Loaded {len(result)} models successfully",
-                gr.Dropdown(choices=result, value=default_model),
-                gr.Dropdown(choices=result, value=default_model)
+                gr.update(choices=result, value=default_model),
+                gr.update(choices=result, value=default_model)
             )
         else:
             return (
-                gr.Dropdown(choices=[]),
+                gr.update(choices=[]),
                 f"❌ {result}",
-                gr.Dropdown(choices=[]),
-                gr.Dropdown(choices=[])
+                gr.update(choices=[]),
+                gr.update(choices=[])
             )
 
     def save_config_with_models(api_key, base_url, provider_name, selected_models_list,
@@ -589,8 +589,8 @@ with gr.Blocks(title="Prompt Engineer") as demo:
     def update_default_model_choices(selected_models_list):
         """Update the default model dropdown when selected models change."""
         if not selected_models_list:
-            return gr.Dropdown(choices=[])
-        return gr.Dropdown(
+            return gr.update(choices=[])
+        return gr.update(
             choices=selected_models_list,
             value=selected_models_list[0] if selected_models_list else None
         )
@@ -664,9 +664,9 @@ with gr.Blocks(title="Prompt Engineer") as demo:
     def toggle_view(mode):
         """Toggle between formatted and raw response views."""
         if mode == "Formatted":
-            return gr.Markdown(visible=True), gr.JSON(visible=False)
+            return gr.update(visible=True), gr.update(visible=False)
         else:  # Raw
-            return gr.Markdown(visible=False), gr.JSON(visible=True)
+            return gr.update(visible=False), gr.update(visible=True)
 
     view_mode.change(
         fn=toggle_view,

@@ -574,14 +574,14 @@ with gr.Blocks(title="Prompt Engineer") as demo:
                 )
 
             # Formatted view - renders markdown/JSON/YAML
-            with gr.Box(visible=True) as formatted_box:
+            with gr.Column(visible=True) as formatted_box:
                 response_formatted = gr.Markdown(
                     label="Formatted Response",
                     value=""
                 )
 
             # Raw view - shows full API response as JSON
-            with gr.Box(visible=False) as raw_box:
+            with gr.Column(visible=False) as raw_box:
                 response_raw = gr.JSON(
                     label="Raw API Response",
                     value={}

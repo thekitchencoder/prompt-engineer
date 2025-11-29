@@ -582,166 +582,166 @@ def create_ui():
                 with gr.Row():
                     workspace_info = gr.Markdown(get_workspace_header())
 
-                # ============================================================
-                # VIEW 1: PROMPT/VARIABLE EDITOR
-                # ============================================================
-                with gr.Column(visible=True, elem_id="prompts-view") as prompts_view:
-                    gr.Markdown("## 📝 Prompt & Variable Editor")
+                # Use Tabs for proper view switching (hide tab headers with CSS)
+                with gr.Tabs(selected=0, elem_id="view-tabs") as view_tabs:
+                    # ============================================================
+                    # VIEW 1: PROMPT/VARIABLE EDITOR
+                    # ============================================================
+                    with gr.Tab("Prompts", id=0, elem_id="prompts-tab"):
+                        gr.Markdown("## 📝 Prompt & Variable Editor")
 
-                    # Prompt Selection
-                    with gr.Row():
-                        prompt_selector = gr.Dropdown(
-                            label="Select Prompt",
-                            choices=get_prompt_names(),
-                            interactive=True,
-                            scale=3
-                        )
-                        create_new_btn = gr.Button("➕ New", size="sm", scale=1)
-
-                    # New Prompt Dialog (hidden by default)
-                    with gr.Column(visible=False) as new_prompt_dialog:
-                        gr.Markdown("### Create New Prompt")
+                        # Prompt Selection
                         with gr.Row():
-                            new_prompt_name = gr.Textbox(
-                                label="Prompt Name",
-                                placeholder="e.g., code_review",
+                            prompt_selector = gr.Dropdown(
+                                label="Select Prompt",
+                                choices=get_prompt_names(),
+                                interactive=True,
+                                scale=3
+                            )
+                            create_new_btn = gr.Button("➕ New", size="sm", scale=1)
+
+                        # New Prompt Dialog (hidden by default)
+                        with gr.Column(visible=False) as new_prompt_dialog:
+                            gr.Markdown("### Create New Prompt")
+                            with gr.Row():
+                                new_prompt_name = gr.Textbox(
+                                    label="Prompt Name",
+                                    placeholder="e.g., code_review",
+                                    scale=2
+                                )
+                                new_prompt_type = gr.Radio(
+                                    label="Type",
+                                    choices=["single", "multi-role"],
+                                    value="single",
+                                    scale=1
+                                )
+                            with gr.Row():
+                                create_prompt_btn = gr.Button("Create", variant="primary", scale=1)
+                                cancel_create_btn = gr.Button("Cancel", scale=1)
+
+                        # Role and File Management
+                        with gr.Row():
+                            with gr.Column(scale=1):
+                                prompt_role_selector = gr.Radio(
+                                    label="Role",
+                                    choices=["system", "user", "assistant"],
+                                    value="user"
+                                )
+                            with gr.Column(scale=2):
+                                prompt_file_info = gr.Markdown("*No file selected*")
+
+                        # Tabbed Editor (Prompt + Variables)
+                        with gr.Tabs():
+                            with gr.Tab("Prompt"):
+                                prompt_editor = gr.Textbox(
+                                    label="",
+                                    placeholder="Enter prompt content...",
+                                    lines=15,
+                                    max_lines=25,
+                                    interactive=True,
+                                    show_label=False
+                                )
+                                with gr.Row():
+                                    with gr.Column(scale=1):
+                                        save_prompt_btn = gr.Button("💾 Save", variant="primary")
+                                    with gr.Column(scale=3):
+                                        prompt_vars_display = gr.Markdown("*No variables detected*")
+
+                            with gr.Tab("Variables"):
+                                variables_editor = gr.Textbox(
+                                    label="Variable Configuration (YAML)",
+                                    placeholder="# Define variables here\nvariables:\n  var_name:\n    type: value\n    value: \"content\"",
+                                    lines=15,
+                                    max_lines=25,
+                                    interactive=True
+                                )
+                                save_vars_btn = gr.Button("💾 Save Variables", variant="primary")
+
+                        editor_status = gr.Textbox(label="Status", interactive=False, lines=1, show_label=False)
+
+                    # ============================================================
+                    # VIEW 2: LLM COMPOSITION & TESTING
+                    # ============================================================
+                    with gr.Tab("LLM", id=1, elem_id="llm-tab"):
+                        gr.Markdown("## 🤖 LLM Testing")
+
+                        # Model Selection
+                        with gr.Row():
+                            model_dropdown = gr.Dropdown(
+                                label="Model",
+                                choices=["gpt-4", "gpt-3.5-turbo", "claude-3-opus"],
+                                value="gpt-4",
                                 scale=2
                             )
-                            new_prompt_type = gr.Radio(
-                                label="Type",
-                                choices=["single", "multi-role"],
-                                value="single",
+                            temperature_slider = gr.Slider(
+                                label="Temperature",
+                                minimum=0,
+                                maximum=2,
+                                value=0.7,
+                                step=0.1,
                                 scale=1
                             )
+
+                        # Prompt Composition
+                        gr.Markdown("### Compose Prompt")
                         with gr.Row():
-                            create_prompt_btn = gr.Button("Create", variant="primary", scale=1)
-                            cancel_create_btn = gr.Button("Cancel", scale=1)
-
-                    # Role and File Management
-                    with gr.Row():
-                        with gr.Column(scale=1):
-                            prompt_role_selector = gr.Radio(
-                                label="Role",
-                                choices=["system", "user", "assistant"],
-                                value="user"
+                            system_prompt_selector = gr.Dropdown(
+                                label="System Prompt",
+                                choices=get_prompt_names(),
+                                allow_custom_value=True
                             )
-                        with gr.Column(scale=2):
-                            prompt_file_info = gr.Markdown("*No file selected*")
-
-                    # Tabbed Editor (Prompt + Variables)
-                    with gr.Tabs():
-                        with gr.Tab("Prompt"):
-                            prompt_editor = gr.Textbox(
-                                label="",
-                                placeholder="Enter prompt content...",
-                                lines=15,
-                                max_lines=25,
-                                interactive=True,
-                                show_label=False
-                            )
-                            with gr.Row():
-                                with gr.Column(scale=1):
-                                    save_prompt_btn = gr.Button("💾 Save", variant="primary")
-                                with gr.Column(scale=3):
-                                    prompt_vars_display = gr.Markdown("*No variables detected*")
-
-                        with gr.Tab("Variables"):
-                            variables_editor = gr.Textbox(
-                                label="Variable Configuration (YAML)",
-                                placeholder="# Define variables here\nvariables:\n  var_name:\n    type: value\n    value: \"content\"",
-                                lines=15,
-                                max_lines=25,
-                                interactive=True
-                            )
-                            save_vars_btn = gr.Button("💾 Save Variables", variant="primary")
-
-                    editor_status = gr.Textbox(label="Status", interactive=False, lines=1, show_label=False)
-
-                # ============================================================
-                # VIEW 2: LLM COMPOSITION & TESTING
-                # ============================================================
-                with gr.Column(visible=False, elem_id="llm-view") as llm_view:
-                    gr.Markdown("## 🤖 LLM Testing")
-
-                    # Model Selection
-                    with gr.Row():
-                        model_dropdown = gr.Dropdown(
-                            label="Model",
-                            choices=["gpt-4", "gpt-3.5-turbo", "claude-3-opus"],
-                            value="gpt-4",
-                            scale=2
-                        )
-                        temperature_slider = gr.Slider(
-                            label="Temperature",
-                            minimum=0,
-                            maximum=2,
-                            value=0.7,
-                            step=0.1,
-                            scale=1
-                        )
-
-                    # Prompt Composition
-                    gr.Markdown("### Compose Prompt")
-                    with gr.Row():
-                        system_prompt_selector = gr.Dropdown(
-                            label="System Prompt",
-                            choices=get_prompt_names(),
-                            allow_custom_value=True
-                        )
-                        user_prompt_selector = gr.Dropdown(
-                            label="User Prompt",
-                            choices=get_prompt_names(),
-                            allow_custom_value=True
-                        )
-
-                    # Raw View & Send
-                    with gr.Tabs():
-                        with gr.Tab("Raw Request"):
-                            raw_request_display = gr.Code(
-                                label="",
-                                language="json",
-                                lines=10
+                            user_prompt_selector = gr.Dropdown(
+                                label="User Prompt",
+                                choices=get_prompt_names(),
+                                allow_custom_value=True
                             )
 
-                        with gr.Tab("Response"):
-                            llm_response_display = gr.Markdown("*No response yet*")
+                        # Raw View & Send
+                        with gr.Tabs():
+                            with gr.Tab("Raw Request"):
+                                raw_request_display = gr.Code(
+                                    label="",
+                                    language="json",
+                                    lines=10
+                                )
 
-                        with gr.Tab("Raw Response"):
-                            raw_response_display = gr.Code(
-                                label="",
-                                language="json",
-                                lines=10
+                            with gr.Tab("Response"):
+                                llm_response_display = gr.Markdown("*No response yet*")
+
+                            with gr.Tab("Raw Response"):
+                                raw_response_display = gr.Code(
+                                    label="",
+                                    language="json",
+                                    lines=10
+                                )
+
+                        send_to_llm_btn = gr.Button("🚀 Send to LLM", variant="primary", size="lg")
+                        llm_status = gr.Textbox(label="Status", interactive=False, lines=1, show_label=False)
+
+                    # ============================================================
+                    # VIEW 3: SETTINGS
+                    # ============================================================
+                    with gr.Tab("Settings", id=2, elem_id="settings-tab"):
+                        gr.Markdown("## ⚙️ Settings")
+
+                        with gr.Accordion("Workspace Configuration", open=True):
+                            workspace_config_display = gr.Code(
+                                label="workspace.yaml",
+                                language="yaml",
+                                lines=15
                             )
 
-                    send_to_llm_btn = gr.Button("🚀 Send to LLM", variant="primary", size="lg")
-                    llm_status = gr.Textbox(label="Status", interactive=False, lines=1, show_label=False)
-
-                # ============================================================
-                # VIEW 3: SETTINGS
-                # ============================================================
-                with gr.Column(visible=False, elem_id="settings-view") as settings_view:
-                    gr.Markdown("## ⚙️ Settings")
-
-                    with gr.Accordion("Workspace Configuration", open=True):
-                        workspace_config_display = gr.Code(
-                            label="workspace.yaml",
-                            language="yaml",
-                            lines=15
-                        )
-
-                    with gr.Accordion("Provider Configuration", open=False):
-                        gr.Markdown("*Provider settings coming soon*")
+                        with gr.Accordion("Provider Configuration", open=False):
+                            gr.Markdown("*Provider settings coming soon*")
 
         # ================================================================
         # Event Handlers
         # ================================================================
 
-        # Navigation - ensure only one view visible at a time
+        # Navigation - switch tabs and update button variants
         def show_prompts_view():
             return (
-                gr.update(visible=True),   # prompts_view
-                gr.update(visible=False),  # llm_view
-                gr.update(visible=False),  # settings_view
+                gr.Tabs(selected=0),  # Select Prompts tab
                 gr.update(variant="primary"),  # prompts_nav_btn active
                 gr.update(variant="secondary"),  # llm_nav_btn inactive
                 gr.update(variant="secondary")   # settings_nav_btn inactive
@@ -749,9 +749,7 @@ def create_ui():
 
         def show_llm_view():
             return (
-                gr.update(visible=False),  # prompts_view
-                gr.update(visible=True),   # llm_view
-                gr.update(visible=False),  # settings_view
+                gr.Tabs(selected=1),  # Select LLM tab
                 gr.update(variant="secondary"),  # prompts_nav_btn inactive
                 gr.update(variant="primary"),    # llm_nav_btn active
                 gr.update(variant="secondary")   # settings_nav_btn inactive
@@ -759,9 +757,7 @@ def create_ui():
 
         def show_settings_view():
             return (
-                gr.update(visible=False),  # prompts_view
-                gr.update(visible=False),  # llm_view
-                gr.update(visible=True),   # settings_view
+                gr.Tabs(selected=2),  # Select Settings tab
                 gr.update(variant="secondary"),  # prompts_nav_btn inactive
                 gr.update(variant="secondary"),  # llm_nav_btn inactive
                 gr.update(variant="primary")     # settings_nav_btn active
@@ -769,17 +765,17 @@ def create_ui():
 
         prompts_nav_btn.click(
             fn=show_prompts_view,
-            outputs=[prompts_view, llm_view, settings_view, prompts_nav_btn, llm_nav_btn, settings_nav_btn]
+            outputs=[view_tabs, prompts_nav_btn, llm_nav_btn, settings_nav_btn]
         )
 
         llm_nav_btn.click(
             fn=show_llm_view,
-            outputs=[prompts_view, llm_view, settings_view, prompts_nav_btn, llm_nav_btn, settings_nav_btn]
+            outputs=[view_tabs, prompts_nav_btn, llm_nav_btn, settings_nav_btn]
         )
 
         settings_nav_btn.click(
             fn=show_settings_view,
-            outputs=[prompts_view, llm_view, settings_view, prompts_nav_btn, llm_nav_btn, settings_nav_btn]
+            outputs=[view_tabs, prompts_nav_btn, llm_nav_btn, settings_nav_btn]
         )
 
         # Prompt Editor
@@ -1011,22 +1007,15 @@ if __name__ == "__main__":
         height: 60px !important;
         padding: 8px !important;
     }
-    /* Make views overlay each other in the same space */
-    #main-content {
-        position: relative !important;
-    }
-    #prompts-view, #llm-view, #settings-view {
-        position: relative !important;
-        width: 100% !important;
-    }
-    /* Hide inactive views completely */
-    #prompts-view[style*="display: none"],
-    #llm-view[style*="display: none"],
-    #settings-view[style*="display: none"] {
+    /* Hide the tab headers */
+    #view-tabs .tab-nav {
         display: none !important;
-        visibility: hidden !important;
-        height: 0 !important;
-        overflow: hidden !important;
+    }
+    #view-tabs > .tabs {
+        display: none !important;
+    }
+    #view-tabs button[role="tab"] {
+        display: none !important;
     }
     """
 

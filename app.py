@@ -1,748 +1,486 @@
+"""
+Prompt Engineer - Modern Workspace UI
+
+A developer workbench for rapid prompt engineering iteration with workspace-centric architecture.
+"""
+
 import gradio as gr
+from pathlib import Path
+from typing import Optional, List, Tuple
 import os
-from openai import OpenAI
-from dotenv import load_dotenv, set_key, find_dotenv
-import json
-import re
 
-# Load environment variables
-load_dotenv()
+# Import modular components
+from src.prompt_engineer.workspace.workspace import Workspace, WorkspaceManager, WorkspaceError
+from src.prompt_engineer.workspace.config import WorkspacePresets, WorkspaceConfig
+from src.prompt_engineer.workspace.discovery import ProjectType, ProjectDetector, PromptSet
+from src.prompt_engineer.providers.base import LLMRequest, Message, MessageRole
+from src.prompt_engineer.providers.registry import ProviderRegistry
+from src.prompt_engineer.templates.models import PromptRole
+from src.prompt_engineer.config.settings import load_env_config
 
-# Provider presets for easy configuration
-PROVIDER_PRESETS = {
-    "OpenAI": {
-        "base_url": "",
-        "api_key_required": True,
-        "default_models": "gpt-4o,gpt-4o-mini,gpt-4-turbo,gpt-3.5-turbo",
-        "api_key_placeholder": "sk-..."
-    },
-    "Ollama": {
-        "base_url": "http://localhost:11434/v1",
-        "api_key_required": False,
-        "default_models": "llama3.2,mistral,codellama,phi3",
-        "api_key_placeholder": "not-needed"
-    },
-    "LM Studio": {
-        "base_url": "http://localhost:1234/v1",
-        "api_key_required": False,
-        "default_models": "",
-        "api_key_placeholder": "not-needed"
-    },
-    "OpenRouter": {
-        "base_url": "https://openrouter.ai/api/v1",
-        "api_key_required": True,
-        "default_models": "anthropic/claude-3.5-sonnet,openai/gpt-4o,meta-llama/llama-3.2-90b",
-        "api_key_placeholder": "sk-or-v1-..."
-    },
-    "vLLM": {
-        "base_url": "http://localhost:8000/v1",
-        "api_key_required": False,
-        "default_models": "",
-        "api_key_placeholder": "not-needed"
-    },
-    "Custom": {
-        "base_url": "",
-        "api_key_required": True,
-        "default_models": "",
-        "api_key_placeholder": "your-api-key"
-    }
-}
+# Global state
+workspace_manager = WorkspaceManager()
+provider_registry = ProviderRegistry()
 
-# Global configuration state
-config_state = {
-    "api_key": os.getenv("OPENAI_API_KEY", ""),
-    "base_url": os.getenv("OPENAI_BASE_URL", ""),
-    "provider_name": os.getenv("PROVIDER_NAME", "OpenAI"),
-    "models": os.getenv("AVAILABLE_MODELS", ""),
-    "default_model": os.getenv("DEFAULT_MODEL", ""),
-    "temperature": float(os.getenv("DEFAULT_TEMPERATURE", "0.7")),
-    "max_tokens": int(os.getenv("DEFAULT_MAX_TOKENS", "1000"))
-}
 
-# Check if configuration is needed (first run)
-def needs_configuration():
-    """Check if the app needs initial configuration."""
-    api_key = os.getenv("OPENAI_API_KEY", "")
-    # Consider configured if API key is set or base URL is set (for local models)
-    return not api_key and not os.getenv("OPENAI_BASE_URL")
+# ============================================================================
+# Workspace Management Functions
+# ============================================================================
 
-def save_config_to_env(api_key, base_url, provider_name, models, default_model, temperature, max_tokens):
-    """Save configuration to .env file."""
-    env_file = find_dotenv()
-    if not env_file:
-        env_file = ".env"
-        # Create .env if it doesn't exist
-        with open(env_file, "w") as f:
-            f.write("")
+def detect_project_info(workspace_path: str) -> Tuple[str, str, str]:
+    """
+    Detect project type and suggest configuration.
 
-    # Update .env file
-    set_key(env_file, "OPENAI_API_KEY", api_key or "not-needed")
-    set_key(env_file, "OPENAI_BASE_URL", base_url or "")
-    set_key(env_file, "PROVIDER_NAME", provider_name or "OpenAI")
-    set_key(env_file, "AVAILABLE_MODELS", models or "")
-    set_key(env_file, "DEFAULT_MODEL", default_model or "")
-    set_key(env_file, "DEFAULT_TEMPERATURE", str(temperature))
-    set_key(env_file, "DEFAULT_MAX_TOKENS", str(max_tokens))
+    Returns:
+        Tuple of (project_type, suggested_prompt_dir, suggested_vars_dir)
+    """
+    if not workspace_path or not Path(workspace_path).exists():
+        return "unknown", "prompts", "prompts/vars"
 
-    # Update global config state
-    config_state["api_key"] = api_key or "not-needed"
-    config_state["base_url"] = base_url or ""
-    config_state["provider_name"] = provider_name or "OpenAI"
-    config_state["models"] = models or ""
-    config_state["default_model"] = default_model or ""
-    config_state["temperature"] = temperature
-    config_state["max_tokens"] = max_tokens
+    path = Path(workspace_path)
+    project_type = ProjectDetector.detect(path)
+    layout = ProjectDetector.suggest_layout(project_type)
 
-    return "✅ Configuration saved! Restart the app for changes to take full effect."
-
-def get_provider_preset(provider_name):
-    """Get preset configuration for a provider."""
-    preset = PROVIDER_PRESETS.get(provider_name, PROVIDER_PRESETS["Custom"])
     return (
-        preset["base_url"],
-        preset["default_models"],
-        preset["api_key_placeholder"]
+        project_type.value,
+        layout.get("prompt_dir", "prompts"),
+        layout.get("vars_dir", "prompts/vars")
     )
 
-def fetch_available_models(api_key, base_url):
+
+def create_workspace(
+    workspace_path: str,
+    workspace_name: str,
+    preset: str
+) -> Tuple[str, str, str]:
     """
-    Fetch available models from the provider's API.
-    Returns (success: bool, result: list or error message).
-    """
-    try:
-        # Create temporary client with provided credentials
-        temp_client = OpenAI(api_key=api_key or "not-needed", base_url=base_url or None)
+    Create a new workspace with the specified preset.
 
-        # Fetch models from the API
-        models_response = temp_client.models.list()
-
-        # Extract model IDs
-        model_ids = [model.id for model in models_response.data]
-
-        if not model_ids:
-            return False, "No models found at the specified endpoint"
-
-        # Sort models alphabetically
-        model_ids.sort()
-
-        return True, model_ids
-
-    except Exception as e:
-        error_msg = str(e)
-        if "Connection" in error_msg or "connect" in error_msg.lower():
-            return False, f"Connection failed: Unable to reach {base_url or 'OpenAI API'}. Check the URL and network."
-        elif "401" in error_msg or "Unauthorized" in error_msg:
-            return False, "Authentication failed: Invalid API key"
-        elif "403" in error_msg or "Forbidden" in error_msg:
-            return False, "Access forbidden: Check your API key permissions"
-        else:
-            return False, f"Error fetching models: {error_msg}"
-
-def initialize_client():
-    """Initialize the OpenAI client with current configuration."""
-    api_key = config_state["api_key"] or "not-needed"
-    base_url = config_state["base_url"] or None
-
-    if base_url:
-        return OpenAI(api_key=api_key, base_url=base_url)
-    else:
-        return OpenAI(api_key=api_key)
-
-# Initialize client
-client = initialize_client()
-
-# Get available models
-def get_models_list():
-    """Get list of available models from configuration."""
-    models_str = config_state["models"]
-    if models_str:
-        return [model.strip() for model in models_str.split(",")]
-    else:
-        return ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"]
-
-MODELS = get_models_list()
-
-def extract_variables(template: str) -> list:
-    """Extract variable names from a prompt template."""
-    return sorted(list(set(re.findall(r'\{(\w+)\}', template))))
-
-def load_file_content(filepath: str) -> str:
-    """Load content from a file."""
-    try:
-        if not os.path.exists(filepath):
-            return f"Error: File not found: {filepath}"
-
-        with open(filepath, "r") as f:
-            return f.read()
-    except Exception as e:
-        return f"Error reading file: {e}"
-
-def parse_variable_config(config_text: str) -> dict:
-    """
-    Parse variable configuration from text format.
-    Format:
-        variable_name: file:path/to/file.md
-        or
-        variable_name: value:Some fixed text
-    """
-    config = {}
-    lines = config_text.strip().split('\n')
-
-    for line in lines:
-        line = line.strip()
-        if not line or line.startswith('#'):
-            continue
-
-        if ':' not in line:
-            continue
-
-        parts = line.split(':', 2)
-        if len(parts) < 3:
-            continue
-
-        var_name = parts[0].strip()
-        var_type = parts[1].strip()
-        content = parts[2].strip()
-
-        if var_type in ['file', 'value']:
-            config[var_name] = {"type": var_type, "content": content}
-
-    return config
-
-def generate_variable_config_template(template: str) -> str:
-    """Generate a config template from prompt variables."""
-    variables = extract_variables(template)
-
-    if not variables:
-        return "# No variables found in template"
-
-    lines = ["# Variable Configuration"]
-    lines.append("# Format: variable_name:type:content")
-    lines.append("# Types: 'file' (path to file) or 'value' (fixed text)")
-    lines.append("")
-
-    for var in variables:
-        lines.append(f"{var}:value:")
-
-    return '\n'.join(lines)
-
-def build_variables_dict(var_config_text: str) -> dict:
-    """Build variables dictionary from config text."""
-    config = parse_variable_config(var_config_text)
-    result = {}
-
-    for var_name, settings in config.items():
-        if settings["type"] == "file":
-            result[var_name] = load_file_content(settings["content"])
-        else:
-            result[var_name] = settings["content"]
-
-    return result
-
-def format_prompt(template: str, var_config_text: str) -> str:
-    """Format the prompt template with variables."""
-    try:
-        vars_dict = build_variables_dict(var_config_text)
-        return template.format(**vars_dict)
-    except KeyError as e:
-        return f"Error: Missing variable {e} in configuration"
-    except Exception as e:
-        return f"Error formatting prompt: {e}"
-
-def call_llm_api(prompt: str, model: str, temperature: float, max_tokens: int) -> str:
-    """Call OpenAI-compatible API with the given prompt and parameters."""
-    try:
-        # Reinitialize client in case config changed
-        current_client = initialize_client()
-        response = current_client.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=temperature,
-            max_tokens=max_tokens
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        return f"Error calling {config_state['provider_name']} API: {e}"
-
-def process_thinking_response(content: str) -> str:
-    """
-    Process response content to handle thinking tags from reasoning models.
-    Extracts <think>...</think> sections and formats them for display.
-    """
-    import re
-
-    # Check if response contains thinking tags
-    think_pattern = r'<think>(.*?)</think>'
-    thinks = re.findall(think_pattern, content, re.DOTALL)
-
-    if not thinks:
-        # No thinking tags, return as-is
-        return content
-
-    # Remove thinking tags from content
-    response_without_think = re.sub(think_pattern, '', content, flags=re.DOTALL).strip()
-
-    # Format thinking sections
-    formatted_thinks = []
-    for i, think in enumerate(thinks, 1):
-        think_text = think.strip()
-        formatted_thinks.append(f"**🤔 Thinking ({i}):**\n```\n{think_text}\n```\n")
-
-    # Combine: thinking sections first, then response
-    if formatted_thinks:
-        thinking_section = "\n".join(formatted_thinks)
-        if response_without_think:
-            return f"{thinking_section}\n---\n\n{response_without_think}"
-        else:
-            return thinking_section
-
-    return response_without_think if response_without_think else content
-
-def call_llm_api_full(prompt: str, model: str, temperature: float, max_tokens: int) -> tuple:
-    """
-    Call OpenAI-compatible API and return both formatted content and raw response.
-    Returns: (formatted_content: str, raw_response: dict)
+    Returns:
+        Tuple of (status_message, workspace_info, prompt_list)
     """
     try:
-        # Reinitialize client in case config changed
-        current_client = initialize_client()
-        response = current_client.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=temperature,
-            max_tokens=max_tokens
+        if not workspace_path:
+            return "❌ Please select a workspace directory", "", ""
+
+        if not workspace_name:
+            workspace_name = Path(workspace_path).name
+
+        # Create workspace
+        workspace = workspace_manager.create_workspace(
+            root_path=Path(workspace_path),
+            name=workspace_name,
+            preset=preset.lower() if preset != "Auto-detect" else None
         )
 
-        # Extract formatted content
-        raw_content = response.choices[0].message.content
+        # Discover prompts
+        prompt_sets = workspace.discover_prompts()
+        warnings = workspace.get_warnings()
 
-        # Process thinking tags for better display
-        formatted_content = process_thinking_response(raw_content)
+        # Build status message
+        status = f"✅ Workspace created: {workspace.config.name}\n"
+        status += f"📁 Root: {workspace.root_path}\n"
+        status += f"📝 Prompt directory: {workspace.config.layout.prompt_dir}\n"
+        status += f"📋 Variables directory: {workspace.config.layout.vars_dir}\n"
 
-        # Convert response to dict for raw view
-        raw_response = response.model_dump()
+        if warnings:
+            status += "\n⚠️ Warnings:\n"
+            for warning in warnings:
+                status += f"  {warning}\n"
 
-        return formatted_content, raw_response
+        # Build workspace info
+        info = format_workspace_info(workspace)
+
+        # Build prompt list
+        prompt_list = format_prompt_list(prompt_sets)
+
+        return status, info, prompt_list
+
     except Exception as e:
-        error_msg = f"Error calling {config_state['provider_name']} API: {e}"
-        return error_msg, {"error": str(e)}
+        return f"❌ Error creating workspace: {str(e)}", "", ""
 
-def test_prompt_handler(template: str, var_config: str, model: str, temperature: float, max_tokens: int):
-    """Test the prompt with variable configurations."""
-    formatted_prompt = format_prompt(template, var_config)
 
-    if formatted_prompt.startswith("Error"):
-        return formatted_prompt, formatted_prompt, ""
+def open_workspace(workspace_path: str) -> Tuple[str, str, str]:
+    """
+    Open an existing workspace.
 
-    response = call_llm_api(formatted_prompt, model, temperature, max_tokens)
-    return formatted_prompt, response, ""
+    Returns:
+        Tuple of (status_message, workspace_info, prompt_list)
+    """
+    try:
+        if not workspace_path:
+            return "❌ Please select a workspace directory", "", ""
 
-def save_template(template: str, var_config: str, name: str):
-    """Save template and variable configuration."""
-    if not name:
-        return "Please provide a template name"
+        # Open workspace
+        workspace = workspace_manager.open_workspace(Path(workspace_path))
 
-    os.makedirs("templates", exist_ok=True)
-    template_path = f"templates/{name}.txt"
-    config_path = f"templates/{name}.vars"
+        # Discover prompts
+        prompt_sets = workspace.discover_prompts()
+        warnings = workspace.get_warnings()
 
-    with open(template_path, "w") as f:
-        f.write(template)
+        # Build status message
+        status = f"✅ Workspace opened: {workspace.config.name}\n"
+        status += f"📁 Root: {workspace.root_path}\n"
 
-    with open(config_path, "w") as f:
-        f.write(var_config)
+        if warnings:
+            status += "\n⚠️ Warnings:\n"
+            for warning in warnings:
+                status += f"  {warning}\n"
 
-    return f"Saved: {template_path} and {config_path}"
+        # Build workspace info
+        info = format_workspace_info(workspace)
 
-def load_template(name: str):
-    """Load template and variable configuration."""
-    if not name:
-        return "", "", "Please provide a template name"
+        # Build prompt list
+        prompt_list = format_prompt_list(prompt_sets)
 
-    template_path = f"templates/{name}.txt"
-    config_path = f"templates/{name}.vars"
+        return status, info, prompt_list
 
-    if not os.path.exists(template_path):
-        return "", "", f"Template {template_path} not found"
+    except WorkspaceError as e:
+        return f"❌ {str(e)}", "", ""
+    except Exception as e:
+        return f"❌ Error opening workspace: {str(e)}", "", ""
 
-    with open(template_path, "r") as f:
-        template = f.read()
 
-    var_config = ""
-    if os.path.exists(config_path):
-        with open(config_path, "r") as f:
-            var_config = f.read()
-    else:
-        var_config = generate_variable_config_template(template)
+def format_workspace_info(workspace: Workspace) -> str:
+    """Format workspace information for display."""
+    config = workspace.config
 
-    return template, var_config, f"Loaded: {name}"
+    info = f"# {config.name}\n\n"
 
-def get_template_names():
-    """Get list of available template names."""
-    if not os.path.exists("templates"):
+    if config.template.variable_delimiters:
+        delim = config.template.variable_delimiters
+        info += f"**Variable Syntax:** `{delim.start}variable{delim.end}`\n\n"
+
+    info += "## Configuration\n\n"
+    info += f"- **Prompt Directory:** `{config.layout.prompt_dir}`\n"
+    info += f"- **Variables Directory:** `{config.layout.vars_dir}`\n"
+    info += f"- **Prompt Extension:** `{config.layout.prompt_extension}`\n"
+    info += f"- **Variable Extension:** `{config.layout.vars_extension}`\n\n"
+
+    info += "## Naming Convention\n\n"
+    info += f"- **Pattern:** `{config.template.naming.pattern}`\n"
+    info += f"- **Roles:** {', '.join(config.template.naming.roles)}\n\n"
+
+    info += "## Default Model\n\n"
+    info += f"- **Provider:** {config.defaults.provider}\n"
+    info += f"- **Model:** {config.defaults.model}\n"
+    info += f"- **Temperature:** {config.defaults.temperature}\n"
+    info += f"- **Max Tokens:** {config.defaults.max_tokens}\n"
+
+    return info
+
+
+def format_prompt_list(prompt_sets: List[PromptSet]) -> str:
+    """Format prompt sets for display."""
+    if not prompt_sets:
+        return "No prompts found. Add prompt files to your workspace to get started."
+
+    output = "# Discovered Prompts\n\n"
+
+    matched = [ps for ps in prompt_sets if not ps.is_orphaned]
+    orphaned = [ps for ps in prompt_sets if ps.is_orphaned]
+
+    if matched:
+        output += "## Matched Prompts\n\n"
+        for ps in matched:
+            output += f"### {ps.name}\n\n"
+
+            if ps.var_file:
+                output += f"**Variable File:** `{ps.var_file.path.name}`\n\n"
+
+            output += "**Prompts:**\n"
+            for role, prompt_file in ps.prompts.items():
+                output += f"- **{role}**: `{prompt_file.path.name}`\n"
+
+            output += "\n"
+
+    if orphaned:
+        output += "## ⚠️ Orphaned Prompts\n\n"
+        output += "*These prompts don't have matching variable files.*\n\n"
+        for ps in orphaned:
+            for role, prompt_file in ps.prompts.items():
+                output += f"- `{prompt_file.path.name}`\n"
+        output += "\n"
+
+    return output
+
+
+def load_prompt_set(prompt_name: str) -> Tuple[str, str, str, str]:
+    """
+    Load a specific prompt set for viewing/editing.
+
+    Returns:
+        Tuple of (system_prompt, user_prompt, variables_info, status)
+    """
+    workspace = workspace_manager.get_current_workspace()
+    if not workspace:
+        return "", "", "", "❌ No workspace open"
+
+    try:
+        # Get prompt set
+        prompt_set = workspace.get_prompt_set(prompt_name)
+        if not prompt_set:
+            return "", "", "", f"❌ Prompt set '{prompt_name}' not found"
+
+        # Load template
+        template = workspace.load_template(prompt_name)
+        if not template:
+            return "", "", "", f"❌ Could not load template '{prompt_name}'"
+
+        # Load prompt contents
+        system_prompt = ""
+        user_prompt = ""
+
+        if template.has_prompt(PromptRole.SYSTEM):
+            system_prompt_obj = template.get_prompt(PromptRole.SYSTEM)
+            system_prompt = system_prompt_obj.get_content(workspace.root_path)
+
+        if template.has_prompt(PromptRole.USER):
+            user_prompt_obj = template.get_prompt(PromptRole.USER)
+            user_prompt = user_prompt_obj.get_content(workspace.root_path)
+
+        # Format variables
+        variables_info = "## Variables\n\n"
+        for var_name, var in template.variables.items():
+            variables_info += f"### {var_name}\n"
+            variables_info += f"**Type:** {var.type.value}\n\n"
+
+            if var.description:
+                variables_info += f"*{var.description}*\n\n"
+
+            if var.type.value == "file":
+                variables_info += f"**File:** `{var.content}`\n\n"
+            else:
+                variables_info += f"**Value:**\n```\n{var.content}\n```\n\n"
+
+        status = f"✅ Loaded prompt set: {prompt_name}"
+
+        return system_prompt, user_prompt, variables_info, status
+
+    except Exception as e:
+        return "", "", "", f"❌ Error loading prompt: {str(e)}"
+
+
+def get_prompt_names() -> List[str]:
+    """Get list of available prompt names from current workspace."""
+    workspace = workspace_manager.get_current_workspace()
+    if not workspace:
         return []
-    templates = [f.replace(".txt", "") for f in os.listdir("templates") if f.endswith(".txt")]
-    return sorted(templates)
 
-def list_templates():
-    """List all saved templates."""
-    if not os.path.exists("templates"):
-        return "No templates directory found"
+    prompt_sets = workspace.discover_prompts()
+    # Filter out orphaned prompts for the dropdown
+    matched = [ps.name for ps in prompt_sets if not ps.is_orphaned]
+    return matched
 
-    templates = [f.replace(".txt", "") for f in os.listdir("templates") if f.endswith(".txt")]
-    if not templates:
-        return "No templates found"
 
-    return "Available templates:\n" + "\n".join(f"  - {t}" for t in templates)
+# ============================================================================
+# Gradio UI
+# ============================================================================
 
-# Create Gradio interface
-with gr.Blocks(title="Prompt Engineer") as demo:
+def create_ui():
+    """Create the Gradio UI."""
 
-    # Header with settings button
-    with gr.Row():
-        gr.Markdown(f"# 🎯 Prompt Engineer ({config_state['provider_name']})")
-        settings_btn = gr.Button("⚙️ Settings", size="sm", scale=0)
+    with gr.Blocks(title="Prompt Engineer") as app:
 
-    gr.Markdown("Iterate on AI prompts with file-based or fixed variables - no restart needed!")
+        # Header
+        gr.Markdown("# 🛠️ Prompt Engineer - Developer Workbench")
+        gr.Markdown("*Workspace-centric prompt engineering for AI-enabled applications*")
 
-    # Configuration Panel (collapsible)
-    with gr.Accordion("⚙️ Configuration", open=needs_configuration()) as config_accordion:
-        gr.Markdown("### Provider Configuration")
+        # Main tabs
+        with gr.Tabs() as main_tabs:
 
-        with gr.Row():
-            provider_dropdown = gr.Dropdown(
-                choices=list(PROVIDER_PRESETS.keys()),
-                value=config_state["provider_name"],
-                label="Provider",
-                info="Select a preset or choose 'Custom'"
-            )
-
-        with gr.Row():
-            base_url_input = gr.Textbox(
-                label="Base URL",
-                value=config_state["base_url"],
-                placeholder="Leave empty for OpenAI, or enter custom endpoint",
-                info="e.g., http://localhost:11434/v1 for Ollama"
-            )
-
-        with gr.Row():
-            api_key_input = gr.Textbox(
-                label="API Key",
-                value=config_state["api_key"],
-                placeholder="your-api-key",
-                type="password",
-                info="Enter 'not-needed' for local models"
-            )
-
-        gr.Markdown("### Available Models")
-
-        with gr.Row():
-            load_models_btn = gr.Button("🔄 Load Models from Provider", size="sm")
-            models_status = gr.Textbox(
-                label="Status",
-                value="",
-                scale=2,
-                interactive=False,
-                show_label=False
-            )
-
-        with gr.Row():
-            # Initialize with current models from config
-            current_models = [m.strip() for m in config_state["models"].split(",") if m.strip()]
-            selected_models = gr.Dropdown(
-                choices=current_models,
-                value=current_models,
-                label="Select Models to Use",
-                multiselect=True,
-                allow_custom_value=True,
-                info="Load models from provider or enter custom model names"
-            )
-
-        gr.Markdown("### Model Settings (Defaults)")
-
-        with gr.Row():
-            # Use saved default_model from config, or fallback to first available model
-            default_model_value = config_state["default_model"] or (MODELS[0] if MODELS else "")
-            config_model_dropdown = gr.Dropdown(
-                choices=MODELS,
-                value=default_model_value,
-                label="Default Model",
-                allow_custom_value=True,
-                info="Select which model to use by default for testing prompts"
-            )
-
-        with gr.Row():
-            config_temperature_slider = gr.Slider(
-                minimum=0,
-                maximum=2,
-                value=config_state["temperature"],
-                step=0.1,
-                label="Temperature"
-            )
-
-            config_max_tokens_slider = gr.Slider(
-                minimum=1,
-                maximum=4000,
-                value=config_state["max_tokens"],
-                step=100,
-                label="Max Tokens"
-            )
-
-        save_config_btn = gr.Button("💾 Save Configuration", variant="primary")
-        config_status = gr.Textbox(label="Configuration Status", lines=2)
-
-    # Main UI
-    with gr.Row():
-        with gr.Column(scale=1):
-            gr.Markdown("### 1. Prompt Template")
-            template_input = gr.Textbox(
-                label="Prompt Template",
-                placeholder="Enter your prompt template here. Use {variable_name} for variables.",
-                lines=12,
-                value="You are a helpful assistant.\n\nUser question: {question}"
-            )
-
-            parse_vars_btn = gr.Button("🔍 Generate Variable Config", size="sm")
-
-            gr.Markdown("### 2. Variable Configuration")
-            gr.Markdown(
-                "**Format:** `variable_name:type:content`\n\n"
-                "- **file**: `variable_name:file:path/to/file.md`\n"
-                "- **value**: `variable_name:value:Your fixed text here`"
-            )
-
-            var_config_input = gr.Textbox(
-                label="Variable Configuration",
-                placeholder="question:value:What is the capital of France?",
-                lines=8,
-                value="question:value:What is the capital of France?"
-            )
-
-            with gr.Row():
-                preview_button = gr.Button("🔍 Preview Prompt", size="lg")
-                test_button = gr.Button("🚀 Test Prompt", variant="primary", size="lg")
-
-            gr.Markdown("### 3. Template Management")
-
-            gr.Markdown("**Load Template**")
-            with gr.Row():
-                template_dropdown = gr.Dropdown(
-                    choices=get_template_names(),
-                    label="Select Template",
-                    scale=3
+            # ================================================================
+            # Workspace Tab
+            # ================================================================
+            with gr.Tab("📁 Workspace"):
+                gr.Markdown("## Open or Create a Workspace")
+                gr.Markdown(
+                    "Point to your application's root directory. "
+                    "Prompt Engineer will auto-detect the project type and discover prompts."
                 )
-                load_button = gr.Button("📂 Load", scale=1)
 
-            gr.Markdown("**Save New Template**")
-            with gr.Row():
-                template_name_input = gr.Textbox(
-                    label="Template Name",
-                    placeholder="my_template",
-                    scale=3
-                )
-                save_button = gr.Button("💾 Save", scale=1)
+                with gr.Row():
+                    with gr.Column(scale=2):
+                        workspace_path = gr.Textbox(
+                            label="Workspace Directory",
+                            placeholder="/path/to/your/app",
+                            value=str(Path.cwd()),
+                            info="Root directory of your application"
+                        )
 
-            save_status = gr.Textbox(label="Status", lines=3)
+                    with gr.Column(scale=1):
+                        detect_btn = gr.Button("🔍 Detect Project", size="sm")
 
-        with gr.Column(scale=1):
-            gr.Markdown("### Model Selection")
-            # Session model selector - initialized with default model from config
-            session_model_value = config_state["default_model"] or (MODELS[0] if MODELS else "gpt-4o")
-            session_model_dropdown = gr.Dropdown(
-                choices=MODELS,
-                value=session_model_value,
-                label="Model (Session)",
-                allow_custom_value=True,
-                info="Select model for this session (does not change config default)"
-            )
-
-            gr.Markdown("### Formatted Prompt")
-            formatted_output = gr.Textbox(
-                label="This is what gets sent to the API",
-                lines=10,
-                interactive=False
-            )
-
-            gr.Markdown("### API Response")
-
-            with gr.Tabs() as response_tabs:
-                with gr.Tab("Formatted"):
-                    response_formatted = gr.Markdown(
-                        label="Formatted Response",
-                        value=""
+                # Auto-detection results
+                with gr.Row():
+                    detected_type = gr.Textbox(
+                        label="Detected Project Type",
+                        interactive=False,
+                        scale=1
                     )
-                with gr.Tab("Raw"):
-                    response_raw = gr.JSON(
-                        label="Raw API Response",
-                        value={}
+                    suggested_prompt_dir = gr.Textbox(
+                        label="Suggested Prompt Directory",
+                        interactive=False,
+                        scale=1
+                    )
+                    suggested_vars_dir = gr.Textbox(
+                        label="Suggested Variables Directory",
+                        interactive=False,
+                        scale=1
                     )
 
-    # Configuration event handlers
-    def update_config_from_preset(provider_name):
-        """Update configuration inputs when provider preset is selected."""
-        base_url, models, api_key_placeholder = get_provider_preset(provider_name)
-        # Convert default models to list for multi-select dropdown
-        models_list = [m.strip() for m in models.split(",") if m.strip()] if models else []
-        default_model = models_list[0] if models_list else None
-        return (
-            base_url,
-            gr.update(choices=models_list, value=models_list),
-            api_key_placeholder,
-            "",
-            gr.update(choices=models_list, value=default_model),
-            gr.update(choices=models_list, value=default_model)
+                # Workspace creation/opening
+                gr.Markdown("### Configure Workspace")
+
+                with gr.Row():
+                    workspace_name = gr.Textbox(
+                        label="Workspace Name",
+                        placeholder="My Application Prompts",
+                        scale=2
+                    )
+
+                    preset_choice = gr.Dropdown(
+                        label="Preset",
+                        choices=["Auto-detect", "SpringBoot", "Python", "Node.js", "Custom"],
+                        value="Auto-detect",
+                        scale=1
+                    )
+
+                with gr.Row():
+                    create_btn = gr.Button("➕ Create New Workspace", variant="primary")
+                    open_btn = gr.Button("📂 Open Existing Workspace", variant="secondary")
+
+                # Status message
+                workspace_status = gr.Textbox(
+                    label="Status",
+                    interactive=False,
+                    lines=5
+                )
+
+                # Workspace info display
+                with gr.Row():
+                    with gr.Column(scale=1):
+                        workspace_info = gr.Markdown("*No workspace open*")
+
+                    with gr.Column(scale=1):
+                        prompt_list = gr.Markdown("*No prompts discovered*")
+
+            # ================================================================
+            # Prompts Tab
+            # ================================================================
+            with gr.Tab("📝 Prompts"):
+                gr.Markdown("## Prompt Viewer")
+                gr.Markdown("*Load and view prompts from your workspace*")
+
+                with gr.Row():
+                    prompt_selector = gr.Dropdown(
+                        label="Select Prompt",
+                        choices=[],
+                        interactive=True,
+                        scale=3
+                    )
+
+                    load_prompt_btn = gr.Button("🔄 Load Prompt", scale=1)
+                    refresh_list_btn = gr.Button("🔄 Refresh List", size="sm", scale=1)
+
+                prompt_status = gr.Textbox(
+                    label="Status",
+                    interactive=False,
+                    lines=2
+                )
+
+                with gr.Row():
+                    with gr.Column():
+                        gr.Markdown("### System Prompt")
+                        system_prompt_display = gr.Code(
+                            label="",
+                            language="markdown",
+                            lines=10,
+                            interactive=False
+                        )
+
+                    with gr.Column():
+                        gr.Markdown("### User Prompt")
+                        user_prompt_display = gr.Code(
+                            label="",
+                            language="markdown",
+                            lines=10,
+                            interactive=False
+                        )
+
+                gr.Markdown("### Variables")
+                variables_display = gr.Markdown("*No variables*")
+
+            # ================================================================
+            # Settings Tab
+            # ================================================================
+            with gr.Tab("⚙️ Settings"):
+                gr.Markdown("## Workspace Settings")
+                gr.Markdown("*Coming soon: Provider configuration, model settings, etc.*")
+
+        # ================================================================
+        # Event Handlers
+        # ================================================================
+
+        # Detect project type
+        detect_btn.click(
+            fn=detect_project_info,
+            inputs=[workspace_path],
+            outputs=[detected_type, suggested_prompt_dir, suggested_vars_dir]
         )
 
-    def load_models_from_provider(api_key, base_url):
-        """Load available models from the provider's API."""
-        if not base_url and not api_key:
-            return (
-                gr.update(choices=[]),
-                "⚠️ Please configure Base URL and API Key first",
-                gr.update(choices=[]),
-                gr.update(choices=[])
-            )
-
-        success, result = fetch_available_models(api_key, base_url)
-
-        if success:
-            default_model = result[0] if result else None
-            return (
-                gr.update(choices=result, value=result),
-                f"✅ Loaded {len(result)} models successfully",
-                gr.update(choices=result, value=default_model),
-                gr.update(choices=result, value=default_model)
-            )
-        else:
-            return (
-                gr.update(choices=[]),
-                f"❌ {result}",
-                gr.update(choices=[]),
-                gr.update(choices=[])
-            )
-
-    def save_config_with_models(api_key, base_url, provider_name, selected_models_list,
-                               default_model, temperature, max_tokens):
-        """Save configuration with selected models."""
-        # Convert list to comma-separated string
-        models_str = ",".join(selected_models_list) if selected_models_list else ""
-        return save_config_to_env(api_key, base_url, provider_name, models_str,
-                                 default_model, temperature, max_tokens)
-
-    def update_default_model_choices(selected_models_list):
-        """Update the default model dropdown when selected models change."""
-        if not selected_models_list:
-            return gr.update(choices=[])
-        return gr.update(
-            choices=selected_models_list,
-            value=selected_models_list[0] if selected_models_list else None
+        # Create workspace
+        create_btn.click(
+            fn=create_workspace,
+            inputs=[workspace_path, workspace_name, preset_choice],
+            outputs=[workspace_status, workspace_info, prompt_list]
+        ).then(
+            fn=get_prompt_names,
+            inputs=[],
+            outputs=[prompt_selector]
         )
 
-    provider_dropdown.change(
-        fn=update_config_from_preset,
-        inputs=[provider_dropdown],
-        outputs=[base_url_input, selected_models, api_key_input, models_status, config_model_dropdown, session_model_dropdown]
-    )
-
-    load_models_btn.click(
-        fn=load_models_from_provider,
-        inputs=[api_key_input, base_url_input],
-        outputs=[selected_models, models_status, config_model_dropdown, session_model_dropdown]
-    )
-
-    selected_models.change(
-        fn=update_default_model_choices,
-        inputs=[selected_models],
-        outputs=[config_model_dropdown]
-    )
-
-    save_config_btn.click(
-        fn=save_config_with_models,
-        inputs=[api_key_input, base_url_input, provider_dropdown, selected_models,
-                config_model_dropdown, config_temperature_slider, config_max_tokens_slider],
-        outputs=[config_status]
-    )
-
-    settings_btn.click(
-        fn=lambda: gr.Accordion(open=True),
-        outputs=[config_accordion]
-    )
-
-    # Main UI event handlers
-    parse_vars_btn.click(
-        fn=generate_variable_config_template,
-        inputs=[template_input],
-        outputs=[var_config_input]
-    )
-
-    def preview_prompt(template, var_config):
-        """Preview the formatted prompt without calling the API."""
-        formatted = format_prompt(template, var_config)
-        return formatted, "", {}, ""
-
-    def format_and_prepare(template, var_config):
-        """Format the prompt and show it immediately before API call."""
-        formatted = format_prompt(template, var_config)
-        if formatted.startswith("Error"):
-            return formatted, formatted, {}, ""
-        return formatted, "⏳ Calling API...", {}, ""
-
-    def call_api_async(template, var_config, model):
-        """Make the API call and return both formatted and raw responses."""
-        # Format the prompt again (needed for API call)
-        formatted = format_prompt(template, var_config)
-
-        if formatted.startswith("Error"):
-            return formatted, {"error": "Prompt formatting failed"}
-
-        # Call the API with the selected session model
-        formatted_response, raw_response = call_llm_api_full(
-            formatted,
-            model,
-            config_state["temperature"],
-            config_state["max_tokens"]
+        # Open workspace
+        open_btn.click(
+            fn=open_workspace,
+            inputs=[workspace_path],
+            outputs=[workspace_status, workspace_info, prompt_list]
+        ).then(
+            fn=get_prompt_names,
+            inputs=[],
+            outputs=[prompt_selector]
         )
-        return formatted_response, raw_response
 
-    preview_button.click(
-        fn=preview_prompt,
-        inputs=[template_input, var_config_input],
-        outputs=[formatted_output, response_formatted, response_raw, save_status]
-    )
+        # Load prompt
+        load_prompt_btn.click(
+            fn=load_prompt_set,
+            inputs=[prompt_selector],
+            outputs=[system_prompt_display, user_prompt_display, variables_display, prompt_status]
+        )
 
-    # Chain the test prompt: first format (immediate), then call API (async)
-    test_button.click(
-        fn=format_and_prepare,
-        inputs=[template_input, var_config_input],
-        outputs=[formatted_output, response_formatted, response_raw, save_status]
-    ).then(
-        fn=call_api_async,
-        inputs=[template_input, var_config_input, session_model_dropdown],
-        outputs=[response_formatted, response_raw]
-    )
+        # Refresh prompt list
+        refresh_list_btn.click(
+            fn=get_prompt_names,
+            inputs=[],
+            outputs=[prompt_selector]
+        )
 
-    def save_and_refresh(template, var_config, name):
-        """Save template and refresh the dropdown list."""
-        status = save_template(template, var_config, name)
-        return status, gr.update(choices=get_template_names())
+    return app
 
-    save_button.click(
-        fn=save_and_refresh,
-        inputs=[template_input, var_config_input, template_name_input],
-        outputs=[save_status, template_dropdown]
-    )
 
-    load_button.click(
-        fn=load_template,
-        inputs=[template_dropdown],
-        outputs=[template_input, var_config_input, save_status]
-    )
+# ============================================================================
+# Main Entry Point
+# ============================================================================
 
 if __name__ == "__main__":
-    demo.launch(
+    # Load environment configuration
+    load_env_config()
+
+    # Create and launch UI
+    app = create_ui()
+    app.launch(
         server_name="0.0.0.0",
         server_port=7860,
-        theme=gr.themes.Soft(),
-        css="""
-        .config-header { display: flex; align-items: center; justify-content: space-between; }
-    """)
+        share=False,
+        show_error=True
+    )

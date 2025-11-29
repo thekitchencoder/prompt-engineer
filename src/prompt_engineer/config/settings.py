@@ -241,3 +241,29 @@ class ConfigManager:
     def reload(self):
         """Reload settings from .env file."""
         self.settings = AppSettings(_env_file=str(self.env_file))
+
+
+# Global config instance
+_config_manager: Optional[ConfigManager] = None
+
+
+def load_env_config() -> ConfigManager:
+    """
+    Load environment configuration on application startup.
+
+    Returns:
+        ConfigManager instance
+    """
+    global _config_manager
+
+    if _config_manager is None:
+        from dotenv import load_dotenv
+        load_dotenv()
+        _config_manager = ConfigManager()
+
+    return _config_manager
+
+
+def get_config_manager() -> Optional[ConfigManager]:
+    """Get the global config manager instance."""
+    return _config_manager

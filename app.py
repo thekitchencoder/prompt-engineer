@@ -574,18 +574,18 @@ with gr.Blocks(title="Prompt Engineer") as demo:
                 )
 
             # Formatted view - renders markdown/JSON/YAML
-            response_formatted = gr.Markdown(
-                label="Formatted Response",
-                value="",
-                visible=True
-            )
+            with gr.Box(visible=True) as formatted_box:
+                response_formatted = gr.Markdown(
+                    label="Formatted Response",
+                    value=""
+                )
 
             # Raw view - shows full API response as JSON
-            response_raw = gr.JSON(
-                label="Raw API Response",
-                value={},
-                visible=False
-            )
+            with gr.Box(visible=False) as raw_box:
+                response_raw = gr.JSON(
+                    label="Raw API Response",
+                    value={}
+                )
 
     # Configuration event handlers
     def update_config_from_preset(provider_name):
@@ -724,7 +724,7 @@ with gr.Blocks(title="Prompt Engineer") as demo:
     view_mode.change(
         fn=toggle_view,
         inputs=[view_mode],
-        outputs=[response_formatted, response_raw]
+        outputs=[formatted_box, raw_box]
     )
 
     preview_button.click(

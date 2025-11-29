@@ -964,6 +964,10 @@ def create_ui():
 
         def hide_create_dialog():
             """Hide the create new prompt dialog."""
+            return gr.update(visible=False)
+
+        def clear_and_hide():
+            """Clear the name field and hide dialog."""
             return gr.update(visible=False), ""
 
         def handle_create_prompt(name):
@@ -987,7 +991,7 @@ def create_ui():
 
         cancel_create_btn.click(
             fn=hide_create_dialog,
-            outputs=[new_prompt_dialog, new_prompt_name]
+            outputs=[new_prompt_dialog]
         )
 
         create_prompt_btn.click(

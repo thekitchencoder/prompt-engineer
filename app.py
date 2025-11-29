@@ -550,13 +550,28 @@ def create_ui():
             # ================================================================
             # LEFT ICON NAVIGATION (minimal)
             # ================================================================
-            with gr.Column(scale=0, min_width=60):
-                gr.Markdown("### 🛠️")
+            with gr.Column(scale=0, min_width=50):
+                gr.Markdown("<br>")  # Top spacing
 
                 # Navigation buttons (icon-only style)
-                prompts_nav_btn = gr.Button("📝", size="lg", variant="primary")
-                llm_nav_btn = gr.Button("🤖", size="lg")
-                settings_nav_btn = gr.Button("⚙️", size="lg")
+                prompts_nav_btn = gr.Button(
+                    "📝",
+                    size="sm",
+                    variant="primary",  # Active by default
+                    min_width=40
+                )
+                llm_nav_btn = gr.Button(
+                    "🤖",
+                    size="sm",
+                    variant="secondary",  # Inactive by default
+                    min_width=40
+                )
+                settings_nav_btn = gr.Button(
+                    "⚙️",
+                    size="sm",
+                    variant="secondary",  # Inactive by default
+                    min_width=40
+                )
 
             # ================================================================
             # MAIN CONTENT AREA
@@ -702,29 +717,50 @@ def create_ui():
         # Event Handlers
         # ================================================================
 
-        # Navigation
+        # Navigation - ensure only one view visible at a time
         def show_prompts_view():
-            return gr.update(visible=True), gr.update(visible=False), gr.update(visible=False)
+            return (
+                gr.update(visible=True),   # prompts_view
+                gr.update(visible=False),  # llm_view
+                gr.update(visible=False),  # settings_view
+                gr.update(variant="primary"),  # prompts_nav_btn active
+                gr.update(variant="secondary"),  # llm_nav_btn inactive
+                gr.update(variant="secondary")   # settings_nav_btn inactive
+            )
 
         def show_llm_view():
-            return gr.update(visible=False), gr.update(visible=True), gr.update(visible=False)
+            return (
+                gr.update(visible=False),  # prompts_view
+                gr.update(visible=True),   # llm_view
+                gr.update(visible=False),  # settings_view
+                gr.update(variant="secondary"),  # prompts_nav_btn inactive
+                gr.update(variant="primary"),    # llm_nav_btn active
+                gr.update(variant="secondary")   # settings_nav_btn inactive
+            )
 
         def show_settings_view():
-            return gr.update(visible=False), gr.update(visible=False), gr.update(visible=True)
+            return (
+                gr.update(visible=False),  # prompts_view
+                gr.update(visible=False),  # llm_view
+                gr.update(visible=True),   # settings_view
+                gr.update(variant="secondary"),  # prompts_nav_btn inactive
+                gr.update(variant="secondary"),  # llm_nav_btn inactive
+                gr.update(variant="primary")     # settings_nav_btn active
+            )
 
         prompts_nav_btn.click(
             fn=show_prompts_view,
-            outputs=[prompts_view, llm_view, settings_view]
+            outputs=[prompts_view, llm_view, settings_view, prompts_nav_btn, llm_nav_btn, settings_nav_btn]
         )
 
         llm_nav_btn.click(
             fn=show_llm_view,
-            outputs=[prompts_view, llm_view, settings_view]
+            outputs=[prompts_view, llm_view, settings_view, prompts_nav_btn, llm_nav_btn, settings_nav_btn]
         )
 
         settings_nav_btn.click(
             fn=show_settings_view,
-            outputs=[prompts_view, llm_view, settings_view]
+            outputs=[prompts_view, llm_view, settings_view, prompts_nav_btn, llm_nav_btn, settings_nav_btn]
         )
 
         # Prompt Editor

@@ -600,23 +600,16 @@ def create_ui():
                             )
                             create_new_btn = gr.Button("➕ New", size="sm", scale=1)
 
-                        # New Prompt Dialog - Modal style with backdrop
-                        new_prompt_dialog = gr.Column(visible=False, elem_id="new-prompt-modal")
-                        with new_prompt_dialog:
+                        # New Prompt Dialog - Simple hidden section
+                        with gr.Group(visible=False) as new_prompt_dialog:
+                            gr.Markdown("### ➕ Create New Prompt")
+                            new_prompt_name = gr.Textbox(
+                                label="Prompt Name",
+                                placeholder="e.g., code_review"
+                            )
                             with gr.Row():
-                                with gr.Column(scale=1):
-                                    pass  # Left spacer
-                                with gr.Column(scale=3, elem_id="modal-content"):
-                                    gr.Markdown("### ➕ Create New Prompt")
-                                    new_prompt_name = gr.Textbox(
-                                        label="Prompt Name",
-                                        placeholder="e.g., code_review"
-                                    )
-                                    with gr.Row():
-                                        create_prompt_btn = gr.Button("Create", variant="primary", scale=1)
-                                        cancel_create_btn = gr.Button("Cancel", scale=1)
-                                with gr.Column(scale=1):
-                                    pass  # Right spacer
+                                create_prompt_btn = gr.Button("Create", variant="primary", scale=1)
+                                cancel_create_btn = gr.Button("Cancel", scale=1)
 
                         # File Info
                         prompt_file_info = gr.Markdown("*No file selected*")
@@ -660,6 +653,9 @@ def create_ui():
                         # Hidden state to track unsaved changes
                         original_prompt_content = gr.State("")
                         original_vars_content = gr.State("")
+
+                        # Hidden state for newly created prompt
+                        new_prompt_to_select = gr.State("")
 
                     # ============================================================
                     # VIEW 2: LLM COMPOSITION & TESTING
@@ -981,12 +977,13 @@ def create_ui():
             # Get the safe name that was actually created
             import re
             safe_name = re.sub(r'[^a-zA-Z0-9_-]', '_', name.strip().lower())
-            # Hide dialog, clear name field, update dropdown with new prompt selected, show status
+            # Hide dialog, clear name field, update dropdown choices only (don't set value yet)
             return (
                 gr.update(visible=False),
                 "",
-                gr.update(choices=updated_choices, value=safe_name),
-                status
+                gr.update(choices=updated_choices),
+                status,
+                safe_name  # Return safe_name to trigger loading
             )
 
         create_new_btn.click(
@@ -1004,7 +1001,12 @@ def create_ui():
         create_prompt_btn.click(
             fn=handle_create_prompt,
             inputs=[new_prompt_name],
-            outputs=[new_prompt_dialog, new_prompt_name, prompt_selector, editor_status],
+            outputs=[new_prompt_dialog, new_prompt_name, prompt_selector, editor_status, new_prompt_to_select],
+            queue=False
+        ).then(
+            fn=lambda name: name,  # Just pass through the name
+            inputs=[new_prompt_to_select],
+            outputs=[prompt_selector],
             queue=False
         )
 
@@ -1067,26 +1069,6 @@ if __name__ == "__main__":
     }
     #view-tabs button[role="tab"] {
         display: none !important;
-    }
-    /* Modal dialog styling */
-    #new-prompt-modal {
-        position: fixed !important;
-        top: 0 !important;
-        left: 0 !important;
-        width: 100vw !important;
-        height: 100vh !important;
-        background-color: rgba(0, 0, 0, 0.5) !important;
-        z-index: 1000 !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-    }
-    #modal-content {
-        background-color: var(--background-fill-primary) !important;
-        padding: 2rem !important;
-        border-radius: 8px !important;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1) !important;
-        max-width: 500px !important;
     }
     """
 

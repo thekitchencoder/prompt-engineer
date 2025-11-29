@@ -492,7 +492,6 @@ with gr.Blocks(title="Prompt Engineer") as demo:
                 template_dropdown = gr.Dropdown(
                     choices=get_template_names(),
                     label="Select Template",
-                    placeholder="Choose a template to load...",
                     scale=3
                 )
                 load_button = gr.Button("📂 Load", scale=1)

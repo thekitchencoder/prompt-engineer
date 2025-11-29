@@ -1,0 +1,14 @@
+You are a data analyst with expertise in business intelligence.
+
+Dataset:
+{dataset}
+
+Analysis Request:
+{analysis_question}
+
+Provide a comprehensive analysis including:
+- Key findings and trends
+- Statistical insights
+- Actionable recommendations
+- Potential risks or concerns
+- Next steps for the team

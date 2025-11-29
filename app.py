@@ -466,6 +466,17 @@ with gr.Blocks(title="Prompt Engineer") as demo:
             save_status = gr.Textbox(label="Status", lines=3)
 
         with gr.Column(scale=1):
+            gr.Markdown("### Model Selection")
+            # Session model selector - initialized with default model from config
+            session_model_value = config_state["default_model"] or (MODELS[0] if MODELS else "gpt-4o")
+            session_model_dropdown = gr.Dropdown(
+                choices=MODELS,
+                value=session_model_value,
+                label="Model (Session)",
+                allow_custom_value=True,
+                info="Select model for this session (does not change config default)"
+            )
+
             gr.Markdown("### Formatted Prompt")
             formatted_output = gr.Textbox(
                 label="This is what gets sent to the API",
@@ -492,6 +503,7 @@ with gr.Blocks(title="Prompt Engineer") as demo:
             gr.Dropdown(choices=models_list, value=models_list),
             api_key_placeholder,
             "",
+            gr.Dropdown(choices=models_list, value=default_model),
             gr.Dropdown(choices=models_list, value=default_model)
         )
 
@@ -501,6 +513,7 @@ with gr.Blocks(title="Prompt Engineer") as demo:
             return (
                 gr.Dropdown(choices=[]),
                 "⚠️ Please configure Base URL and API Key first",
+                gr.Dropdown(choices=[]),
                 gr.Dropdown(choices=[])
             )
 
@@ -511,12 +524,14 @@ with gr.Blocks(title="Prompt Engineer") as demo:
             return (
                 gr.Dropdown(choices=result, value=result),
                 f"✅ Loaded {len(result)} models successfully",
+                gr.Dropdown(choices=result, value=default_model),
                 gr.Dropdown(choices=result, value=default_model)
             )
         else:
             return (
                 gr.Dropdown(choices=[]),
                 f"❌ {result}",
+                gr.Dropdown(choices=[]),
                 gr.Dropdown(choices=[])
             )
 
@@ -540,13 +555,13 @@ with gr.Blocks(title="Prompt Engineer") as demo:
     provider_dropdown.change(
         fn=update_config_from_preset,
         inputs=[provider_dropdown],
-        outputs=[base_url_input, selected_models, api_key_input, models_status, config_model_dropdown]
+        outputs=[base_url_input, selected_models, api_key_input, models_status, config_model_dropdown, session_model_dropdown]
     )
 
     load_models_btn.click(
         fn=load_models_from_provider,
         inputs=[api_key_input, base_url_input],
-        outputs=[selected_models, models_status, config_model_dropdown]
+        outputs=[selected_models, models_status, config_model_dropdown, session_model_dropdown]
     )
 
     selected_models.change(
@@ -586,21 +601,15 @@ with gr.Blocks(title="Prompt Engineer") as demo:
             return formatted, formatted, ""
         return formatted, "⏳ Calling API...", ""
 
-    def call_api_async(template, var_config):
+    def call_api_async(template, var_config, model):
         """Make the API call and return the response."""
-        # Use configured default_model, or fallback to first available model
-        model = config_state.get("default_model") or (
-            config_state.get("models", "").split(",")[0] if config_state.get("models")
-            else MODELS[0] if MODELS else "gpt-4o"
-        )
-
         # Format the prompt again (needed for API call)
         formatted = format_prompt(template, var_config)
 
         if formatted.startswith("Error"):
             return formatted
 
-        # Call the API
+        # Call the API with the selected session model
         response = call_llm_api(
             formatted,
             model,
@@ -622,7 +631,7 @@ with gr.Blocks(title="Prompt Engineer") as demo:
         outputs=[formatted_output, response_output, save_status]
     ).then(
         fn=call_api_async,
-        inputs=[template_input, var_config_input],
+        inputs=[template_input, var_config_input, session_model_dropdown],
         outputs=[response_output]
     )
 

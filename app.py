@@ -600,18 +600,23 @@ def create_ui():
                             )
                             create_new_btn = gr.Button("➕ New", size="sm", scale=1)
 
-                        # New Prompt Dialog (hidden by default)
-                        with gr.Column(visible=False) as new_prompt_dialog:
-                            gr.Markdown("### Create New Prompt")
+                        # New Prompt Dialog - Modal style with backdrop
+                        new_prompt_dialog = gr.Column(visible=False, elem_id="new-prompt-modal")
+                        with new_prompt_dialog:
                             with gr.Row():
-                                new_prompt_name = gr.Textbox(
-                                    label="Prompt Name",
-                                    placeholder="e.g., code_review",
-                                    scale=3
-                                )
-                            with gr.Row():
-                                create_prompt_btn = gr.Button("Create", variant="primary", scale=1)
-                                cancel_create_btn = gr.Button("Cancel", scale=1)
+                                with gr.Column(scale=1):
+                                    pass  # Left spacer
+                                with gr.Column(scale=3, elem_id="modal-content"):
+                                    gr.Markdown("### ➕ Create New Prompt")
+                                    new_prompt_name = gr.Textbox(
+                                        label="Prompt Name",
+                                        placeholder="e.g., code_review"
+                                    )
+                                    with gr.Row():
+                                        create_prompt_btn = gr.Button("Create", variant="primary", scale=1)
+                                        cancel_create_btn = gr.Button("Cancel", scale=1)
+                                with gr.Column(scale=1):
+                                    pass  # Right spacer
 
                         # File Info
                         prompt_file_info = gr.Markdown("*No file selected*")
@@ -986,18 +991,21 @@ def create_ui():
 
         create_new_btn.click(
             fn=show_create_dialog,
-            outputs=[new_prompt_dialog]
+            outputs=[new_prompt_dialog],
+            queue=False
         )
 
         cancel_create_btn.click(
             fn=hide_create_dialog,
-            outputs=[new_prompt_dialog]
+            outputs=[new_prompt_dialog],
+            queue=False  # Process immediately without queuing
         )
 
         create_prompt_btn.click(
             fn=handle_create_prompt,
             inputs=[new_prompt_name],
-            outputs=[new_prompt_dialog, new_prompt_name, prompt_selector, editor_status]
+            outputs=[new_prompt_dialog, new_prompt_name, prompt_selector, editor_status],
+            queue=False
         )
 
         # Trigger initial load if a prompt is selected
@@ -1059,6 +1067,26 @@ if __name__ == "__main__":
     }
     #view-tabs button[role="tab"] {
         display: none !important;
+    }
+    /* Modal dialog styling */
+    #new-prompt-modal {
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+        width: 100vw !important;
+        height: 100vh !important;
+        background-color: rgba(0, 0, 0, 0.5) !important;
+        z-index: 1000 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+    }
+    #modal-content {
+        background-color: var(--background-fill-primary) !important;
+        padding: 2rem !important;
+        border-radius: 8px !important;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1) !important;
+        max-width: 500px !important;
     }
     """
 

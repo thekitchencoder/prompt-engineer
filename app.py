@@ -271,6 +271,68 @@ def get_prompt_names() -> List[str]:
     return matched
 
 
+def save_prompt_file(prompt_name: str, role: str, content: str) -> str:
+    """
+    Save prompt content back to file.
+
+    Args:
+        prompt_name: Name of the prompt set
+        role: Role (system/user)
+        content: New content to save
+
+    Returns:
+        Status message
+    """
+    workspace = workspace_manager.get_current_workspace()
+    if not workspace:
+        return "❌ No workspace open"
+
+    try:
+        # Get prompt set to find file path
+        prompt_set = workspace.get_prompt_set(prompt_name)
+        if not prompt_set:
+            return f"❌ Prompt set '{prompt_name}' not found"
+
+        # Find the prompt file for this role
+        if role not in prompt_set.prompts:
+            return f"❌ No {role} prompt found for '{prompt_name}'"
+
+        prompt_file = prompt_set.prompts[role]
+        file_path = prompt_file.path
+
+        # Write content to file
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(content)
+
+        return f"✅ Saved {role} prompt to {file_path.name}"
+
+    except Exception as e:
+        return f"❌ Error saving prompt: {str(e)}"
+
+
+def extract_variables_from_prompt(content: str) -> List[str]:
+    """
+    Extract variable names from prompt content.
+
+    Args:
+        content: Prompt template content
+
+    Returns:
+        List of variable names
+    """
+    workspace = workspace_manager.get_current_workspace()
+    if not workspace:
+        return []
+
+    # Get delimiter from workspace config
+    config = workspace.config
+    start_delim = config.template.variable_delimiters.start
+    end_delim = config.template.variable_delimiters.end
+
+    # Use the parser from workspace
+    return workspace.parser.extract_variables(content)
+
+
 def get_workspace_header() -> str:
     """Get workspace header info for display."""
     workspace = workspace_manager.get_current_workspace()
@@ -459,23 +521,39 @@ def create_ui():
 
                         # System Prompt Section
                         with gr.Accordion("System Prompt", open=True):
-                            system_file_header = gr.Markdown("*No file loaded*")
-                            system_prompt_display = gr.Code(
+                            with gr.Row():
+                                system_file_header = gr.Markdown("*No file loaded*")
+
+                            system_prompt_display = gr.Textbox(
                                 label="",
-                                language="markdown",
-                                lines=8,
-                                interactive=False
+                                placeholder="System prompt content...",
+                                lines=10,
+                                max_lines=20,
+                                interactive=True,
+                                show_label=False
                             )
+
+                            with gr.Row():
+                                save_system_btn = gr.Button("💾 Save System Prompt", size="sm", variant="primary")
+                                system_vars_display = gr.Markdown("*No variables detected*")
 
                         # User Prompt Section
                         with gr.Accordion("User Prompt", open=True):
-                            user_file_header = gr.Markdown("*No file loaded*")
-                            user_prompt_display = gr.Code(
+                            with gr.Row():
+                                user_file_header = gr.Markdown("*No file loaded*")
+
+                            user_prompt_display = gr.Textbox(
                                 label="",
-                                language="markdown",
-                                lines=8,
-                                interactive=False
+                                placeholder="User prompt content...",
+                                lines=10,
+                                max_lines=20,
+                                interactive=True,
+                                show_label=False
                             )
+
+                            with gr.Row():
+                                save_user_btn = gr.Button("💾 Save User Prompt", size="sm", variant="primary")
+                                user_vars_display = gr.Markdown("*No variables detected*")
 
                         # Variables Section
                         with gr.Accordion("Variables", open=True):
@@ -545,26 +623,38 @@ def create_ui():
 
         # Helper function to load and display prompt with file headers
         def load_and_display_prompt(prompt_name):
-            """Load prompt and return with file headers."""
+            """Load prompt and return with file headers and extracted variables."""
             system_content, user_content, vars_info, status = load_prompt_set(prompt_name)
 
             workspace = workspace_manager.get_current_workspace()
+            system_file = "*No file*"
+            user_file = "*No file*"
+            system_vars_md = "*No variables detected*"
+            user_vars_md = "*No variables detected*"
+
             if workspace and prompt_name:
                 prompt_set = workspace.get_prompt_set(prompt_name)
                 if prompt_set:
                     # Get file names for headers
-                    system_file = ""
-                    user_file = ""
-
                     if 'system' in prompt_set.prompts:
                         system_file = f"📄 `{prompt_set.prompts['system'].path.name}`"
+                        # Extract variables from system prompt
+                        system_vars = extract_variables_from_prompt(system_content)
+                        if system_vars:
+                            system_vars_md = "**Variables:** " + ", ".join([f"`{{{v}}}`" for v in system_vars])
 
                     if 'user' in prompt_set.prompts:
                         user_file = f"📄 `{prompt_set.prompts['user'].path.name}`"
+                        # Extract variables from user prompt
+                        user_vars = extract_variables_from_prompt(user_content)
+                        if user_vars:
+                            user_vars_md = "**Variables:** " + ", ".join([f"`{{{v}}}`" for v in user_vars])
 
-                    return system_file, system_content, user_file, user_content, vars_info, status
-
-            return "*No file*", system_content, "*No file*", user_content, vars_info, status
+            return (
+                system_file, system_content, system_vars_md,
+                user_file, user_content, user_vars_md,
+                vars_info, status
+            )
 
         # Load prompt
         load_prompt_btn.click(
@@ -573,11 +663,74 @@ def create_ui():
             outputs=[
                 system_file_header,
                 system_prompt_display,
+                system_vars_display,
                 user_file_header,
                 user_prompt_display,
+                user_vars_display,
                 variables_display,
                 prompt_status
             ]
+        )
+
+        # Save system prompt
+        def save_system_prompt(prompt_name, content):
+            """Save system prompt to file."""
+            status = save_prompt_file(prompt_name, "system", content)
+            # Re-extract variables after save
+            vars_list = extract_variables_from_prompt(content)
+            vars_md = "*No variables detected*"
+            if vars_list:
+                vars_md = "**Variables:** " + ", ".join([f"`{{{v}}}`" for v in vars_list])
+            return status, vars_md
+
+        save_system_btn.click(
+            fn=save_system_prompt,
+            inputs=[prompt_selector, system_prompt_display],
+            outputs=[prompt_status, system_vars_display]
+        )
+
+        # Save user prompt
+        def save_user_prompt(prompt_name, content):
+            """Save user prompt to file."""
+            status = save_prompt_file(prompt_name, "user", content)
+            # Re-extract variables after save
+            vars_list = extract_variables_from_prompt(content)
+            vars_md = "*No variables detected*"
+            if vars_list:
+                vars_md = "**Variables:** " + ", ".join([f"`{{{v}}}`" for v in vars_list])
+            return status, vars_md
+
+        save_user_btn.click(
+            fn=save_user_prompt,
+            inputs=[prompt_selector, user_prompt_display],
+            outputs=[prompt_status, user_vars_display]
+        )
+
+        # Live variable extraction as user types (debounced)
+        def update_system_vars(content):
+            """Update variable display as system prompt is edited."""
+            vars_list = extract_variables_from_prompt(content)
+            if vars_list:
+                return "**Variables:** " + ", ".join([f"`{{{v}}}`" for v in vars_list])
+            return "*No variables detected*"
+
+        system_prompt_display.change(
+            fn=update_system_vars,
+            inputs=[system_prompt_display],
+            outputs=[system_vars_display]
+        )
+
+        def update_user_vars(content):
+            """Update variable display as user prompt is edited."""
+            vars_list = extract_variables_from_prompt(content)
+            if vars_list:
+                return "**Variables:** " + ", ".join([f"`{{{v}}}`" for v in vars_list])
+            return "*No variables detected*"
+
+        user_prompt_display.change(
+            fn=update_user_vars,
+            inputs=[user_prompt_display],
+            outputs=[user_vars_display]
         )
 
     return app

@@ -543,19 +543,6 @@ def create_ui():
 
     with gr.Blocks(title="Prompt Engineer") as app:
 
-        # Inject custom CSS for fixed-width nav and larger icons
-        gr.HTML("""
-        <style>
-        #nav-prompts, #nav-llm, #nav-settings {
-            font-size: 32px !important;
-            min-width: 60px !important;
-            max-width: 60px !important;
-            height: 60px !important;
-            padding: 8px !important;
-        }
-        </style>
-        """)
-
         # ================================================================
         # Main Layout: Icon Nav + Content Area
         # ================================================================
@@ -968,11 +955,23 @@ if __name__ == "__main__":
         print(f"⚠️ Warning: {str(e)}")
         print("⚠️ Continuing without workspace...")
 
+    # Custom CSS for navigation
+    custom_css = """
+    #nav-prompts, #nav-llm, #nav-settings {
+        font-size: 32px !important;
+        min-width: 60px !important;
+        max-width: 60px !important;
+        height: 60px !important;
+        padding: 8px !important;
+    }
+    """
+
     # Create and launch UI
     app = create_ui()
     app.launch(
         server_name="0.0.0.0",
         server_port=7860,
         share=False,
-        show_error=True
+        show_error=True,
+        css=custom_css
     )

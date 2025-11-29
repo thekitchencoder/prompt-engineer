@@ -264,6 +264,40 @@ def call_llm_api(prompt: str, model: str, temperature: float, max_tokens: int) -
     except Exception as e:
         return f"Error calling {config_state['provider_name']} API: {e}"
 
+def process_thinking_response(content: str) -> str:
+    """
+    Process response content to handle thinking tags from reasoning models.
+    Extracts <think>...</think> sections and formats them for display.
+    """
+    import re
+
+    # Check if response contains thinking tags
+    think_pattern = r'<think>(.*?)</think>'
+    thinks = re.findall(think_pattern, content, re.DOTALL)
+
+    if not thinks:
+        # No thinking tags, return as-is
+        return content
+
+    # Remove thinking tags from content
+    response_without_think = re.sub(think_pattern, '', content, flags=re.DOTALL).strip()
+
+    # Format thinking sections
+    formatted_thinks = []
+    for i, think in enumerate(thinks, 1):
+        think_text = think.strip()
+        formatted_thinks.append(f"**🤔 Thinking ({i}):**\n```\n{think_text}\n```\n")
+
+    # Combine: thinking sections first, then response
+    if formatted_thinks:
+        thinking_section = "\n".join(formatted_thinks)
+        if response_without_think:
+            return f"{thinking_section}\n---\n\n{response_without_think}"
+        else:
+            return thinking_section
+
+    return response_without_think if response_without_think else content
+
 def call_llm_api_full(prompt: str, model: str, temperature: float, max_tokens: int) -> tuple:
     """
     Call OpenAI-compatible API and return both formatted content and raw response.
@@ -280,7 +314,10 @@ def call_llm_api_full(prompt: str, model: str, temperature: float, max_tokens: i
         )
 
         # Extract formatted content
-        formatted_content = response.choices[0].message.content
+        raw_content = response.choices[0].message.content
+
+        # Process thinking tags for better display
+        formatted_content = process_thinking_response(raw_content)
 
         # Convert response to dict for raw view
         raw_response = response.model_dump()

@@ -54,6 +54,7 @@ config_state = {
     "base_url": os.getenv("OPENAI_BASE_URL", ""),
     "provider_name": os.getenv("PROVIDER_NAME", "OpenAI"),
     "models": os.getenv("AVAILABLE_MODELS", ""),
+    "default_model": os.getenv("DEFAULT_MODEL", ""),
     "temperature": float(os.getenv("DEFAULT_TEMPERATURE", "0.7")),
     "max_tokens": int(os.getenv("DEFAULT_MAX_TOKENS", "1000"))
 }
@@ -65,7 +66,7 @@ def needs_configuration():
     # Consider configured if API key is set or base URL is set (for local models)
     return not api_key and not os.getenv("OPENAI_BASE_URL")
 
-def save_config_to_env(api_key, base_url, provider_name, models, temperature, max_tokens):
+def save_config_to_env(api_key, base_url, provider_name, models, default_model, temperature, max_tokens):
     """Save configuration to .env file."""
     env_file = find_dotenv()
     if not env_file:
@@ -79,6 +80,7 @@ def save_config_to_env(api_key, base_url, provider_name, models, temperature, ma
     set_key(env_file, "OPENAI_BASE_URL", base_url or "")
     set_key(env_file, "PROVIDER_NAME", provider_name or "OpenAI")
     set_key(env_file, "AVAILABLE_MODELS", models or "")
+    set_key(env_file, "DEFAULT_MODEL", default_model or "")
     set_key(env_file, "DEFAULT_TEMPERATURE", str(temperature))
     set_key(env_file, "DEFAULT_MAX_TOKENS", str(max_tokens))
 
@@ -87,6 +89,7 @@ def save_config_to_env(api_key, base_url, provider_name, models, temperature, ma
     config_state["base_url"] = base_url or ""
     config_state["provider_name"] = provider_name or "OpenAI"
     config_state["models"] = models or ""
+    config_state["default_model"] = default_model or ""
     config_state["temperature"] = temperature
     config_state["max_tokens"] = max_tokens
 
@@ -100,6 +103,40 @@ def get_provider_preset(provider_name):
         preset["default_models"],
         preset["api_key_placeholder"]
     )
+
+def fetch_available_models(api_key, base_url):
+    """
+    Fetch available models from the provider's API.
+    Returns (success: bool, result: list or error message).
+    """
+    try:
+        # Create temporary client with provided credentials
+        temp_client = OpenAI(api_key=api_key or "not-needed", base_url=base_url or None)
+
+        # Fetch models from the API
+        models_response = temp_client.models.list()
+
+        # Extract model IDs
+        model_ids = [model.id for model in models_response.data]
+
+        if not model_ids:
+            return False, "No models found at the specified endpoint"
+
+        # Sort models alphabetically
+        model_ids.sort()
+
+        return True, model_ids
+
+    except Exception as e:
+        error_msg = str(e)
+        if "Connection" in error_msg or "connect" in error_msg.lower():
+            return False, f"Connection failed: Unable to reach {base_url or 'OpenAI API'}. Check the URL and network."
+        elif "401" in error_msg or "Unauthorized" in error_msg:
+            return False, "Authentication failed: Invalid API key"
+        elif "403" in error_msg or "Forbidden" in error_msg:
+            return False, "Access forbidden: Check your API key permissions"
+        else:
+            return False, f"Error fetching models: {error_msg}"
 
 def initialize_client():
     """Initialize the OpenAI client with current configuration."""
@@ -227,6 +264,69 @@ def call_llm_api(prompt: str, model: str, temperature: float, max_tokens: int) -
     except Exception as e:
         return f"Error calling {config_state['provider_name']} API: {e}"
 
+def process_thinking_response(content: str) -> str:
+    """
+    Process response content to handle thinking tags from reasoning models.
+    Extracts <think>...</think> sections and formats them for display.
+    """
+    import re
+
+    # Check if response contains thinking tags
+    think_pattern = r'<think>(.*?)</think>'
+    thinks = re.findall(think_pattern, content, re.DOTALL)
+
+    if not thinks:
+        # No thinking tags, return as-is
+        return content
+
+    # Remove thinking tags from content
+    response_without_think = re.sub(think_pattern, '', content, flags=re.DOTALL).strip()
+
+    # Format thinking sections
+    formatted_thinks = []
+    for i, think in enumerate(thinks, 1):
+        think_text = think.strip()
+        formatted_thinks.append(f"**🤔 Thinking ({i}):**\n```\n{think_text}\n```\n")
+
+    # Combine: thinking sections first, then response
+    if formatted_thinks:
+        thinking_section = "\n".join(formatted_thinks)
+        if response_without_think:
+            return f"{thinking_section}\n---\n\n{response_without_think}"
+        else:
+            return thinking_section
+
+    return response_without_think if response_without_think else content
+
+def call_llm_api_full(prompt: str, model: str, temperature: float, max_tokens: int) -> tuple:
+    """
+    Call OpenAI-compatible API and return both formatted content and raw response.
+    Returns: (formatted_content: str, raw_response: dict)
+    """
+    try:
+        # Reinitialize client in case config changed
+        current_client = initialize_client()
+        response = current_client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=temperature,
+            max_tokens=max_tokens
+        )
+
+        # Extract formatted content
+        raw_content = response.choices[0].message.content
+
+        # Process thinking tags for better display
+        formatted_content = process_thinking_response(raw_content)
+
+        # Convert response to dict for raw view
+        raw_response = response.model_dump()
+
+        return formatted_content, raw_response
+    except Exception as e:
+        error_msg = f"Error calling {config_state['provider_name']} API: {e}"
+        return error_msg, {"error": str(e)}
+
 def test_prompt_handler(template: str, var_config: str, model: str, temperature: float, max_tokens: int):
     """Test the prompt with variable configurations."""
     formatted_prompt = format_prompt(template, var_config)
@@ -276,6 +376,13 @@ def load_template(name: str):
         var_config = generate_variable_config_template(template)
 
     return template, var_config, f"Loaded: {name}"
+
+def get_template_names():
+    """Get list of available template names."""
+    if not os.path.exists("templates"):
+        return []
+    templates = [f.replace(".txt", "") for f in os.listdir("templates") if f.endswith(".txt")]
+    return sorted(templates)
 
 def list_templates():
     """List all saved templates."""
@@ -327,22 +434,41 @@ with gr.Blocks(title="Prompt Engineer") as demo:
                 info="Enter 'not-needed' for local models"
             )
 
+        gr.Markdown("### Available Models")
+
         with gr.Row():
-            models_input = gr.Textbox(
-                label="Available Models (comma-separated)",
-                value=config_state["models"],
-                placeholder="llama3.2,mistral,codellama",
-                info="Leave empty to use provider defaults"
+            load_models_btn = gr.Button("🔄 Load Models from Provider", size="sm")
+            models_status = gr.Textbox(
+                label="Status",
+                value="",
+                scale=2,
+                interactive=False,
+                show_label=False
+            )
+
+        with gr.Row():
+            # Initialize with current models from config
+            current_models = [m.strip() for m in config_state["models"].split(",") if m.strip()]
+            selected_models = gr.Dropdown(
+                choices=current_models,
+                value=current_models,
+                label="Select Models to Use",
+                multiselect=True,
+                allow_custom_value=True,
+                info="Load models from provider or enter custom model names"
             )
 
         gr.Markdown("### Model Settings (Defaults)")
 
         with gr.Row():
+            # Use saved default_model from config, or fallback to first available model
+            default_model_value = config_state["default_model"] or (MODELS[0] if MODELS else "")
             config_model_dropdown = gr.Dropdown(
                 choices=MODELS,
-                value=MODELS[0] if MODELS else "",
+                value=default_model_value,
                 label="Default Model",
-                allow_custom_value=True
+                allow_custom_value=True,
+                info="Select which model to use by default for testing prompts"
             )
 
         with gr.Row():
@@ -392,9 +518,22 @@ with gr.Blocks(title="Prompt Engineer") as demo:
                 value="question:value:What is the capital of France?"
             )
 
-            test_button = gr.Button("🚀 Test Prompt", variant="primary", size="lg")
+            with gr.Row():
+                preview_button = gr.Button("🔍 Preview Prompt", size="lg")
+                test_button = gr.Button("🚀 Test Prompt", variant="primary", size="lg")
 
             gr.Markdown("### 3. Template Management")
+
+            gr.Markdown("**Load Template**")
+            with gr.Row():
+                template_dropdown = gr.Dropdown(
+                    choices=get_template_names(),
+                    label="Select Template",
+                    scale=3
+                )
+                load_button = gr.Button("📂 Load", scale=1)
+
+            gr.Markdown("**Save New Template**")
             with gr.Row():
                 template_name_input = gr.Textbox(
                     label="Template Name",
@@ -402,12 +541,21 @@ with gr.Blocks(title="Prompt Engineer") as demo:
                     scale=3
                 )
                 save_button = gr.Button("💾 Save", scale=1)
-                load_button = gr.Button("📂 Load", scale=1)
-                list_button = gr.Button("📋 List", scale=1)
 
             save_status = gr.Textbox(label="Status", lines=3)
 
         with gr.Column(scale=1):
+            gr.Markdown("### Model Selection")
+            # Session model selector - initialized with default model from config
+            session_model_value = config_state["default_model"] or (MODELS[0] if MODELS else "gpt-4o")
+            session_model_dropdown = gr.Dropdown(
+                choices=MODELS,
+                value=session_model_value,
+                label="Model (Session)",
+                allow_custom_value=True,
+                info="Select model for this session (does not change config default)"
+            )
+
             gr.Markdown("### Formatted Prompt")
             formatted_output = gr.Textbox(
                 label="This is what gets sent to the API",
@@ -416,28 +564,102 @@ with gr.Blocks(title="Prompt Engineer") as demo:
             )
 
             gr.Markdown("### API Response")
-            response_output = gr.Textbox(
-                label="Model Output",
-                lines=20,
-                interactive=False
-            )
+
+            with gr.Tabs() as response_tabs:
+                with gr.Tab("Formatted"):
+                    response_formatted = gr.Markdown(
+                        label="Formatted Response",
+                        value=""
+                    )
+                with gr.Tab("Raw"):
+                    response_raw = gr.JSON(
+                        label="Raw API Response",
+                        value={}
+                    )
 
     # Configuration event handlers
     def update_config_from_preset(provider_name):
         """Update configuration inputs when provider preset is selected."""
         base_url, models, api_key_placeholder = get_provider_preset(provider_name)
-        return base_url, models, api_key_placeholder
+        # Convert default models to list for multi-select dropdown
+        models_list = [m.strip() for m in models.split(",") if m.strip()] if models else []
+        default_model = models_list[0] if models_list else None
+        return (
+            base_url,
+            gr.update(choices=models_list, value=models_list),
+            api_key_placeholder,
+            "",
+            gr.update(choices=models_list, value=default_model),
+            gr.update(choices=models_list, value=default_model)
+        )
+
+    def load_models_from_provider(api_key, base_url):
+        """Load available models from the provider's API."""
+        if not base_url and not api_key:
+            return (
+                gr.update(choices=[]),
+                "⚠️ Please configure Base URL and API Key first",
+                gr.update(choices=[]),
+                gr.update(choices=[])
+            )
+
+        success, result = fetch_available_models(api_key, base_url)
+
+        if success:
+            default_model = result[0] if result else None
+            return (
+                gr.update(choices=result, value=result),
+                f"✅ Loaded {len(result)} models successfully",
+                gr.update(choices=result, value=default_model),
+                gr.update(choices=result, value=default_model)
+            )
+        else:
+            return (
+                gr.update(choices=[]),
+                f"❌ {result}",
+                gr.update(choices=[]),
+                gr.update(choices=[])
+            )
+
+    def save_config_with_models(api_key, base_url, provider_name, selected_models_list,
+                               default_model, temperature, max_tokens):
+        """Save configuration with selected models."""
+        # Convert list to comma-separated string
+        models_str = ",".join(selected_models_list) if selected_models_list else ""
+        return save_config_to_env(api_key, base_url, provider_name, models_str,
+                                 default_model, temperature, max_tokens)
+
+    def update_default_model_choices(selected_models_list):
+        """Update the default model dropdown when selected models change."""
+        if not selected_models_list:
+            return gr.update(choices=[])
+        return gr.update(
+            choices=selected_models_list,
+            value=selected_models_list[0] if selected_models_list else None
+        )
 
     provider_dropdown.change(
         fn=update_config_from_preset,
         inputs=[provider_dropdown],
-        outputs=[base_url_input, models_input, api_key_input]
+        outputs=[base_url_input, selected_models, api_key_input, models_status, config_model_dropdown, session_model_dropdown]
+    )
+
+    load_models_btn.click(
+        fn=load_models_from_provider,
+        inputs=[api_key_input, base_url_input],
+        outputs=[selected_models, models_status, config_model_dropdown, session_model_dropdown]
+    )
+
+    selected_models.change(
+        fn=update_default_model_choices,
+        inputs=[selected_models],
+        outputs=[config_model_dropdown]
     )
 
     save_config_btn.click(
-        fn=save_config_to_env,
-        inputs=[api_key_input, base_url_input, provider_dropdown, models_input,
-                config_temperature_slider, config_max_tokens_slider],
+        fn=save_config_with_models,
+        inputs=[api_key_input, base_url_input, provider_dropdown, selected_models,
+                config_model_dropdown, config_temperature_slider, config_max_tokens_slider],
         outputs=[config_status]
     )
 
@@ -453,37 +675,67 @@ with gr.Blocks(title="Prompt Engineer") as demo:
         outputs=[var_config_input]
     )
 
-    def test_with_config(template, var_config):
-        """Test prompt using configuration state."""
-        return test_prompt_handler(
-            template,
-            var_config,
-            config_state.get("models", "").split(",")[0] if config_state.get("models") else MODELS[0],
+    def preview_prompt(template, var_config):
+        """Preview the formatted prompt without calling the API."""
+        formatted = format_prompt(template, var_config)
+        return formatted, "", {}, ""
+
+    def format_and_prepare(template, var_config):
+        """Format the prompt and show it immediately before API call."""
+        formatted = format_prompt(template, var_config)
+        if formatted.startswith("Error"):
+            return formatted, formatted, {}, ""
+        return formatted, "⏳ Calling API...", {}, ""
+
+    def call_api_async(template, var_config, model):
+        """Make the API call and return both formatted and raw responses."""
+        # Format the prompt again (needed for API call)
+        formatted = format_prompt(template, var_config)
+
+        if formatted.startswith("Error"):
+            return formatted, {"error": "Prompt formatting failed"}
+
+        # Call the API with the selected session model
+        formatted_response, raw_response = call_llm_api_full(
+            formatted,
+            model,
             config_state["temperature"],
             config_state["max_tokens"]
         )
+        return formatted_response, raw_response
 
-    test_button.click(
-        fn=test_with_config,
+    preview_button.click(
+        fn=preview_prompt,
         inputs=[template_input, var_config_input],
-        outputs=[formatted_output, response_output, save_status]
+        outputs=[formatted_output, response_formatted, response_raw, save_status]
     )
 
+    # Chain the test prompt: first format (immediate), then call API (async)
+    test_button.click(
+        fn=format_and_prepare,
+        inputs=[template_input, var_config_input],
+        outputs=[formatted_output, response_formatted, response_raw, save_status]
+    ).then(
+        fn=call_api_async,
+        inputs=[template_input, var_config_input, session_model_dropdown],
+        outputs=[response_formatted, response_raw]
+    )
+
+    def save_and_refresh(template, var_config, name):
+        """Save template and refresh the dropdown list."""
+        status = save_template(template, var_config, name)
+        return status, gr.update(choices=get_template_names())
+
     save_button.click(
-        fn=save_template,
+        fn=save_and_refresh,
         inputs=[template_input, var_config_input, template_name_input],
-        outputs=[save_status]
+        outputs=[save_status, template_dropdown]
     )
 
     load_button.click(
         fn=load_template,
-        inputs=[template_name_input],
+        inputs=[template_dropdown],
         outputs=[template_input, var_config_input, save_status]
-    )
-
-    list_button.click(
-        fn=list_templates,
-        outputs=[save_status]
     )
 
 if __name__ == "__main__":

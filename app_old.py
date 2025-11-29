@@ -1,39 +1,173 @@
 import gradio as gr
 import os
 from openai import OpenAI
-from dotenv import load_dotenv
+from dotenv import load_dotenv, set_key, find_dotenv
 import json
 import re
-import yaml
 
 # Load environment variables
 load_dotenv()
 
-# Initialize OpenAI client
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# Provider presets for easy configuration
+PROVIDER_PRESETS = {
+    "OpenAI": {
+        "base_url": "",
+        "api_key_required": True,
+        "default_models": "gpt-4o,gpt-4o-mini,gpt-4-turbo,gpt-3.5-turbo",
+        "api_key_placeholder": "sk-..."
+    },
+    "Ollama": {
+        "base_url": "http://localhost:11434/v1",
+        "api_key_required": False,
+        "default_models": "llama3.2,mistral,codellama,phi3",
+        "api_key_placeholder": "not-needed"
+    },
+    "LM Studio": {
+        "base_url": "http://localhost:1234/v1",
+        "api_key_required": False,
+        "default_models": "",
+        "api_key_placeholder": "not-needed"
+    },
+    "OpenRouter": {
+        "base_url": "https://openrouter.ai/api/v1",
+        "api_key_required": True,
+        "default_models": "anthropic/claude-3.5-sonnet,openai/gpt-4o,meta-llama/llama-3.2-90b",
+        "api_key_placeholder": "sk-or-v1-..."
+    },
+    "vLLM": {
+        "base_url": "http://localhost:8000/v1",
+        "api_key_required": False,
+        "default_models": "",
+        "api_key_placeholder": "not-needed"
+    },
+    "Custom": {
+        "base_url": "",
+        "api_key_required": True,
+        "default_models": "",
+        "api_key_placeholder": "your-api-key"
+    }
+}
 
-# Available models
-MODELS = [
-    "gpt-4o",
-    "gpt-4o-mini",
-    "gpt-4-turbo",
-    "gpt-3.5-turbo",
-]
+# Global configuration state
+config_state = {
+    "api_key": os.getenv("OPENAI_API_KEY", ""),
+    "base_url": os.getenv("OPENAI_BASE_URL", ""),
+    "provider_name": os.getenv("PROVIDER_NAME", "OpenAI"),
+    "models": os.getenv("AVAILABLE_MODELS", ""),
+    "default_model": os.getenv("DEFAULT_MODEL", ""),
+    "temperature": float(os.getenv("DEFAULT_TEMPERATURE", "0.7")),
+    "max_tokens": int(os.getenv("DEFAULT_MAX_TOKENS", "1000"))
+}
 
-# Global state for variable configurations
-variable_configs = {}
+# Check if configuration is needed (first run)
+def needs_configuration():
+    """Check if the app needs initial configuration."""
+    api_key = os.getenv("OPENAI_API_KEY", "")
+    # Consider configured if API key is set or base URL is set (for local models)
+    return not api_key and not os.getenv("OPENAI_BASE_URL")
+
+def save_config_to_env(api_key, base_url, provider_name, models, default_model, temperature, max_tokens):
+    """Save configuration to .env file."""
+    env_file = find_dotenv()
+    if not env_file:
+        env_file = ".env"
+        # Create .env if it doesn't exist
+        with open(env_file, "w") as f:
+            f.write("")
+
+    # Update .env file
+    set_key(env_file, "OPENAI_API_KEY", api_key or "not-needed")
+    set_key(env_file, "OPENAI_BASE_URL", base_url or "")
+    set_key(env_file, "PROVIDER_NAME", provider_name or "OpenAI")
+    set_key(env_file, "AVAILABLE_MODELS", models or "")
+    set_key(env_file, "DEFAULT_MODEL", default_model or "")
+    set_key(env_file, "DEFAULT_TEMPERATURE", str(temperature))
+    set_key(env_file, "DEFAULT_MAX_TOKENS", str(max_tokens))
+
+    # Update global config state
+    config_state["api_key"] = api_key or "not-needed"
+    config_state["base_url"] = base_url or ""
+    config_state["provider_name"] = provider_name or "OpenAI"
+    config_state["models"] = models or ""
+    config_state["default_model"] = default_model or ""
+    config_state["temperature"] = temperature
+    config_state["max_tokens"] = max_tokens
+
+    return "✅ Configuration saved! Restart the app for changes to take full effect."
+
+def get_provider_preset(provider_name):
+    """Get preset configuration for a provider."""
+    preset = PROVIDER_PRESETS.get(provider_name, PROVIDER_PRESETS["Custom"])
+    return (
+        preset["base_url"],
+        preset["default_models"],
+        preset["api_key_placeholder"]
+    )
+
+def fetch_available_models(api_key, base_url):
+    """
+    Fetch available models from the provider's API.
+    Returns (success: bool, result: list or error message).
+    """
+    try:
+        # Create temporary client with provided credentials
+        temp_client = OpenAI(api_key=api_key or "not-needed", base_url=base_url or None)
+
+        # Fetch models from the API
+        models_response = temp_client.models.list()
+
+        # Extract model IDs
+        model_ids = [model.id for model in models_response.data]
+
+        if not model_ids:
+            return False, "No models found at the specified endpoint"
+
+        # Sort models alphabetically
+        model_ids.sort()
+
+        return True, model_ids
+
+    except Exception as e:
+        error_msg = str(e)
+        if "Connection" in error_msg or "connect" in error_msg.lower():
+            return False, f"Connection failed: Unable to reach {base_url or 'OpenAI API'}. Check the URL and network."
+        elif "401" in error_msg or "Unauthorized" in error_msg:
+            return False, "Authentication failed: Invalid API key"
+        elif "403" in error_msg or "Forbidden" in error_msg:
+            return False, "Access forbidden: Check your API key permissions"
+        else:
+            return False, f"Error fetching models: {error_msg}"
+
+def initialize_client():
+    """Initialize the OpenAI client with current configuration."""
+    api_key = config_state["api_key"] or "not-needed"
+    base_url = config_state["base_url"] or None
+
+    if base_url:
+        return OpenAI(api_key=api_key, base_url=base_url)
+    else:
+        return OpenAI(api_key=api_key)
+
+# Initialize client
+client = initialize_client()
+
+# Get available models
+def get_models_list():
+    """Get list of available models from configuration."""
+    models_str = config_state["models"]
+    if models_str:
+        return [model.strip() for model in models_str.split(",")]
+    else:
+        return ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"]
+
+MODELS = get_models_list()
 
 def extract_variables(template: str) -> list:
-    """
-    Extract variable names from a prompt template.
-    Finds all {variable_name} patterns.
-    """
-    return list(set(re.findall(r'\{(\w+)\}', template)))
+    """Extract variable names from a prompt template."""
+    return sorted(list(set(re.findall(r'\{(\w+)\}', template))))
 
 def load_file_content(filepath: str) -> str:
-    """
-    Load content from a file. Supports text, markdown, YAML, etc.
-    """
+    """Load content from a file."""
     try:
         if not os.path.exists(filepath):
             return f"Error: File not found: {filepath}"
@@ -43,104 +177,215 @@ def load_file_content(filepath: str) -> str:
     except Exception as e:
         return f"Error reading file: {e}"
 
-def build_variables_dict(var_configs: dict) -> dict:
+def parse_variable_config(config_text: str) -> dict:
     """
-    Build a dictionary of variable values based on configurations.
-    var_configs format: {var_name: {"type": "file"|"value", "content": "..."}}
+    Parse variable configuration from text format.
+    Format:
+        variable_name: file:path/to/file.md
+        or
+        variable_name: value:Some fixed text
     """
+    config = {}
+    lines = config_text.strip().split('\n')
+
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue
+
+        if ':' not in line:
+            continue
+
+        parts = line.split(':', 2)
+        if len(parts) < 3:
+            continue
+
+        var_name = parts[0].strip()
+        var_type = parts[1].strip()
+        content = parts[2].strip()
+
+        if var_type in ['file', 'value']:
+            config[var_name] = {"type": var_type, "content": content}
+
+    return config
+
+def generate_variable_config_template(template: str) -> str:
+    """Generate a config template from prompt variables."""
+    variables = extract_variables(template)
+
+    if not variables:
+        return "# No variables found in template"
+
+    lines = ["# Variable Configuration"]
+    lines.append("# Format: variable_name:type:content")
+    lines.append("# Types: 'file' (path to file) or 'value' (fixed text)")
+    lines.append("")
+
+    for var in variables:
+        lines.append(f"{var}:value:")
+
+    return '\n'.join(lines)
+
+def build_variables_dict(var_config_text: str) -> dict:
+    """Build variables dictionary from config text."""
+    config = parse_variable_config(var_config_text)
     result = {}
 
-    for var_name, config in var_configs.items():
-        if config["type"] == "file":
-            # Load from file
-            content = load_file_content(config["content"])
-            result[var_name] = content
+    for var_name, settings in config.items():
+        if settings["type"] == "file":
+            result[var_name] = load_file_content(settings["content"])
         else:
-            # Use fixed value
-            result[var_name] = config["content"]
+            result[var_name] = settings["content"]
 
     return result
 
-def format_prompt(template: str, var_configs: dict) -> str:
-    """
-    Format the prompt template with variables from configurations.
-    """
+def format_prompt(template: str, var_config_text: str) -> str:
+    """Format the prompt template with variables."""
     try:
-        vars_dict = build_variables_dict(var_configs)
+        vars_dict = build_variables_dict(var_config_text)
         return template.format(**vars_dict)
     except KeyError as e:
-        return f"Error: Missing variable {e} in template"
+        return f"Error: Missing variable {e} in configuration"
     except Exception as e:
         return f"Error formatting prompt: {e}"
 
-def call_openai(prompt: str, model: str, temperature: float, max_tokens: int) -> str:
-    """
-    Call OpenAI API with the given prompt and parameters.
-    """
+def call_llm_api(prompt: str, model: str, temperature: float, max_tokens: int) -> str:
+    """Call OpenAI-compatible API with the given prompt and parameters."""
     try:
-        response = client.chat.completions.create(
+        # Reinitialize client in case config changed
+        current_client = initialize_client()
+        response = current_client.chat.completions.create(
             model=model,
-            messages=[
-                {"role": "user", "content": prompt}
-            ],
+            messages=[{"role": "user", "content": prompt}],
             temperature=temperature,
             max_tokens=max_tokens
         )
         return response.choices[0].message.content
     except Exception as e:
-        return f"Error calling OpenAI API: {e}"
+        return f"Error calling {config_state['provider_name']} API: {e}"
 
-def save_template(template: str, name: str, var_configs: dict):
+def process_thinking_response(content: str) -> str:
     """
-    Save a prompt template and its variable configuration to files.
+    Process response content to handle thinking tags from reasoning models.
+    Extracts <think>...</think> sections and formats them for display.
     """
+    import re
+
+    # Check if response contains thinking tags
+    think_pattern = r'<think>(.*?)</think>'
+    thinks = re.findall(think_pattern, content, re.DOTALL)
+
+    if not thinks:
+        # No thinking tags, return as-is
+        return content
+
+    # Remove thinking tags from content
+    response_without_think = re.sub(think_pattern, '', content, flags=re.DOTALL).strip()
+
+    # Format thinking sections
+    formatted_thinks = []
+    for i, think in enumerate(thinks, 1):
+        think_text = think.strip()
+        formatted_thinks.append(f"**🤔 Thinking ({i}):**\n```\n{think_text}\n```\n")
+
+    # Combine: thinking sections first, then response
+    if formatted_thinks:
+        thinking_section = "\n".join(formatted_thinks)
+        if response_without_think:
+            return f"{thinking_section}\n---\n\n{response_without_think}"
+        else:
+            return thinking_section
+
+    return response_without_think if response_without_think else content
+
+def call_llm_api_full(prompt: str, model: str, temperature: float, max_tokens: int) -> tuple:
+    """
+    Call OpenAI-compatible API and return both formatted content and raw response.
+    Returns: (formatted_content: str, raw_response: dict)
+    """
+    try:
+        # Reinitialize client in case config changed
+        current_client = initialize_client()
+        response = current_client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=temperature,
+            max_tokens=max_tokens
+        )
+
+        # Extract formatted content
+        raw_content = response.choices[0].message.content
+
+        # Process thinking tags for better display
+        formatted_content = process_thinking_response(raw_content)
+
+        # Convert response to dict for raw view
+        raw_response = response.model_dump()
+
+        return formatted_content, raw_response
+    except Exception as e:
+        error_msg = f"Error calling {config_state['provider_name']} API: {e}"
+        return error_msg, {"error": str(e)}
+
+def test_prompt_handler(template: str, var_config: str, model: str, temperature: float, max_tokens: int):
+    """Test the prompt with variable configurations."""
+    formatted_prompt = format_prompt(template, var_config)
+
+    if formatted_prompt.startswith("Error"):
+        return formatted_prompt, formatted_prompt, ""
+
+    response = call_llm_api(formatted_prompt, model, temperature, max_tokens)
+    return formatted_prompt, response, ""
+
+def save_template(template: str, var_config: str, name: str):
+    """Save template and variable configuration."""
     if not name:
         return "Please provide a template name"
 
     os.makedirs("templates", exist_ok=True)
     template_path = f"templates/{name}.txt"
-    config_path = f"templates/{name}.config.json"
+    config_path = f"templates/{name}.vars"
 
-    # Save template
     with open(template_path, "w") as f:
         f.write(template)
 
-    # Save variable configuration
     with open(config_path, "w") as f:
-        json.dump(var_configs, f, indent=2)
+        f.write(var_config)
 
-    return f"Template and config saved to {template_path}"
+    return f"Saved: {template_path} and {config_path}"
 
 def load_template(name: str):
-    """
-    Load a prompt template and its variable configuration from files.
-    Returns: (template_text, var_configs_dict, status_message)
-    """
+    """Load template and variable configuration."""
     if not name:
-        return "", {}, "Please provide a template name"
+        return "", "", "Please provide a template name"
 
     template_path = f"templates/{name}.txt"
-    config_path = f"templates/{name}.config.json"
+    config_path = f"templates/{name}.vars"
 
     if not os.path.exists(template_path):
-        return "", {}, f"Template {template_path} not found"
+        return "", "", f"Template {template_path} not found"
 
-    # Load template
     with open(template_path, "r") as f:
         template = f.read()
 
-    # Load configuration if exists
-    var_configs = {}
+    var_config = ""
     if os.path.exists(config_path):
         with open(config_path, "r") as f:
-            var_configs = json.load(f)
+            var_config = f.read()
+    else:
+        var_config = generate_variable_config_template(template)
 
-    return template, var_configs, f"Loaded {name}"
+    return template, var_config, f"Loaded: {name}"
+
+def get_template_names():
+    """Get list of available template names."""
+    if not os.path.exists("templates"):
+        return []
+    templates = [f.replace(".txt", "") for f in os.listdir("templates") if f.endswith(".txt")]
+    return sorted(templates)
 
 def list_templates():
-    """
-    List all saved templates.
-    """
+    """List all saved templates."""
     if not os.path.exists("templates"):
         return "No templates directory found"
 
@@ -148,196 +393,356 @@ def list_templates():
     if not templates:
         return "No templates found"
 
-    return "\n".join(templates)
+    return "Available templates:\n" + "\n".join(f"  - {t}" for t in templates)
 
-# Create Gradio interface with custom CSS for better styling
-css = """
-.variable-section {
-    border: 1px solid #e0e0e0;
-    border-radius: 8px;
-    padding: 12px;
-    margin: 8px 0;
-    background-color: #f9f9f9;
-}
-"""
+# Create Gradio interface
+with gr.Blocks(title="Prompt Engineer") as demo:
 
-def create_variable_ui():
-    """Create the UI components for variable configuration."""
-    with gr.Accordion("📝 Variables Configuration", open=True):
-        variables_state = gr.State({})
-        variables_display = gr.JSON(label="Current Variables", value={})
+    # Header with settings button
+    with gr.Row():
+        gr.Markdown(f"# 🎯 Prompt Engineer ({config_state['provider_name']})")
+        settings_btn = gr.Button("⚙️ Settings", size="sm", scale=0)
 
-        gr.Markdown("Variables will appear here after you update the template.")
+    gr.Markdown("Iterate on AI prompts with file-based or fixed variables - no restart needed!")
 
-        # Dynamic variable inputs container
-        var_inputs_column = gr.Column(visible=False)
+    # Configuration Panel (collapsible)
+    with gr.Accordion("⚙️ Configuration", open=needs_configuration()) as config_accordion:
+        gr.Markdown("### Provider Configuration")
 
-    return variables_state, variables_display, var_inputs_column
+        with gr.Row():
+            provider_dropdown = gr.Dropdown(
+                choices=list(PROVIDER_PRESETS.keys()),
+                value=config_state["provider_name"],
+                label="Provider",
+                info="Select a preset or choose 'Custom'"
+            )
 
-def update_variables_from_template(template: str, current_vars: dict):
-    """
-    Update variables configuration when template changes.
-    Preserves existing configurations where possible.
-    """
-    detected_vars = extract_variables(template)
+        with gr.Row():
+            base_url_input = gr.Textbox(
+                label="Base URL",
+                value=config_state["base_url"],
+                placeholder="Leave empty for OpenAI, or enter custom endpoint",
+                info="e.g., http://localhost:11434/v1 for Ollama"
+            )
 
-    # Initialize new vars with defaults, preserve existing configs
-    new_vars = {}
-    for var in detected_vars:
-        if var in current_vars:
-            new_vars[var] = current_vars[var]
-        else:
-            # Default to fixed value with empty content
-            new_vars[var] = {"type": "value", "content": ""}
+        with gr.Row():
+            api_key_input = gr.Textbox(
+                label="API Key",
+                value=config_state["api_key"],
+                placeholder="your-api-key",
+                type="password",
+                info="Enter 'not-needed' for local models"
+            )
 
-    return new_vars, new_vars
+        gr.Markdown("### Available Models")
 
-def update_var_config(var_name: str, var_type: str, content: str, current_vars: dict):
-    """Update a single variable's configuration."""
-    current_vars[var_name] = {"type": var_type, "content": content}
-    return current_vars, current_vars
+        with gr.Row():
+            load_models_btn = gr.Button("🔄 Load Models from Provider", size="sm")
+            models_status = gr.Textbox(
+                label="Status",
+                value="",
+                scale=2,
+                interactive=False,
+                show_label=False
+            )
 
-def test_prompt_with_vars(template: str, var_configs: dict, model: str, temperature: float, max_tokens: int):
-    """Test the prompt with variable configurations."""
-    # Format the prompt
-    formatted_prompt = format_prompt(template, var_configs)
+        with gr.Row():
+            # Initialize with current models from config
+            current_models = [m.strip() for m in config_state["models"].split(",") if m.strip()]
+            selected_models = gr.Dropdown(
+                choices=current_models,
+                value=current_models,
+                label="Select Models to Use",
+                multiselect=True,
+                allow_custom_value=True,
+                info="Load models from provider or enter custom model names"
+            )
 
-    # If there was an error formatting, return it
-    if formatted_prompt.startswith("Error"):
-        return formatted_prompt, formatted_prompt, ""
+        gr.Markdown("### Model Settings (Defaults)")
 
-    # Call OpenAI
-    response = call_openai(formatted_prompt, model, temperature, max_tokens)
+        with gr.Row():
+            # Use saved default_model from config, or fallback to first available model
+            default_model_value = config_state["default_model"] or (MODELS[0] if MODELS else "")
+            config_model_dropdown = gr.Dropdown(
+                choices=MODELS,
+                value=default_model_value,
+                label="Default Model",
+                allow_custom_value=True,
+                info="Select which model to use by default for testing prompts"
+            )
 
-    return formatted_prompt, response, ""
+        with gr.Row():
+            config_temperature_slider = gr.Slider(
+                minimum=0,
+                maximum=2,
+                value=config_state["temperature"],
+                step=0.1,
+                label="Temperature"
+            )
 
-# Main Gradio interface
-with gr.Blocks(title="Prompt Engineer", css=css) as demo:
-    gr.Markdown("# 🎯 Prompt Engineer")
-    gr.Markdown("Iterate on your AI prompts quickly without restarting the app!")
+            config_max_tokens_slider = gr.Slider(
+                minimum=1,
+                maximum=4000,
+                value=config_state["max_tokens"],
+                step=100,
+                label="Max Tokens"
+            )
 
-    # State for variable configurations
-    var_configs_state = gr.State({})
+        save_config_btn = gr.Button("💾 Save Configuration", variant="primary")
+        config_status = gr.Textbox(label="Configuration Status", lines=2)
 
+    # Main UI
     with gr.Row():
         with gr.Column(scale=1):
-            gr.Markdown("### Prompt Template")
+            gr.Markdown("### 1. Prompt Template")
             template_input = gr.Textbox(
                 label="Prompt Template",
                 placeholder="Enter your prompt template here. Use {variable_name} for variables.",
-                lines=10,
+                lines=12,
                 value="You are a helpful assistant.\n\nUser question: {question}"
             )
 
-            parse_button = gr.Button("🔍 Parse Variables", size="sm")
+            parse_vars_btn = gr.Button("🔍 Generate Variable Config", size="sm")
 
-            gr.Markdown("### Variables")
-            gr.Markdown("Configure each variable to use either a fixed value or load from a file.")
+            gr.Markdown("### 2. Variable Configuration")
+            gr.Markdown(
+                "**Format:** `variable_name:type:content`\n\n"
+                "- **file**: `variable_name:file:path/to/file.md`\n"
+                "- **value**: `variable_name:value:Your fixed text here`"
+            )
 
-            # Container for dynamic variable inputs
-            variables_container = gr.Column()
-
-            with variables_container:
-                detected_vars_display = gr.JSON(
-                    label="Detected Variables",
-                    value={},
-                    visible=False
-                )
-
-                # We'll dynamically create variable inputs
-                var_inputs = {}
-
-            gr.Markdown("### Model Settings")
-            with gr.Row():
-                model_dropdown = gr.Dropdown(
-                    choices=MODELS,
-                    value=MODELS[0],
-                    label="Model"
-                )
+            var_config_input = gr.Textbox(
+                label="Variable Configuration",
+                placeholder="question:value:What is the capital of France?",
+                lines=8,
+                value="question:value:What is the capital of France?"
+            )
 
             with gr.Row():
-                temperature_slider = gr.Slider(
-                    minimum=0,
-                    maximum=2,
-                    value=0.7,
-                    step=0.1,
-                    label="Temperature"
+                preview_button = gr.Button("🔍 Preview Prompt", size="lg")
+                test_button = gr.Button("🚀 Test Prompt", variant="primary", size="lg")
+
+            gr.Markdown("### 3. Template Management")
+
+            gr.Markdown("**Load Template**")
+            with gr.Row():
+                template_dropdown = gr.Dropdown(
+                    choices=get_template_names(),
+                    label="Select Template",
+                    scale=3
                 )
+                load_button = gr.Button("📂 Load", scale=1)
 
-                max_tokens_slider = gr.Slider(
-                    minimum=1,
-                    maximum=4000,
-                    value=1000,
-                    step=100,
-                    label="Max Tokens"
-                )
-
-            test_button = gr.Button("🚀 Test Prompt", variant="primary")
-
-            gr.Markdown("### Template Management")
+            gr.Markdown("**Save New Template**")
             with gr.Row():
                 template_name_input = gr.Textbox(
                     label="Template Name",
-                    placeholder="my_template"
+                    placeholder="my_template",
+                    scale=3
                 )
-                save_button = gr.Button("💾 Save")
-                load_button = gr.Button("📂 Load")
-                list_button = gr.Button("📋 List")
+                save_button = gr.Button("💾 Save", scale=1)
 
-            save_status = gr.Textbox(label="Status", lines=2)
+            save_status = gr.Textbox(label="Status", lines=3)
 
         with gr.Column(scale=1):
+            gr.Markdown("### Model Selection")
+            # Session model selector - initialized with default model from config
+            session_model_value = config_state["default_model"] or (MODELS[0] if MODELS else "gpt-4o")
+            session_model_dropdown = gr.Dropdown(
+                choices=MODELS,
+                value=session_model_value,
+                label="Model (Session)",
+                allow_custom_value=True,
+                info="Select model for this session (does not change config default)"
+            )
+
             gr.Markdown("### Formatted Prompt")
             formatted_output = gr.Textbox(
-                label="Formatted Prompt (sent to API)",
-                lines=8,
+                label="This is what gets sent to the API",
+                lines=10,
                 interactive=False
             )
 
-            gr.Markdown("### Response")
-            response_output = gr.Textbox(
-                label="API Response",
-                lines=15,
-                interactive=False
+            gr.Markdown("### API Response")
+
+            with gr.Tabs() as response_tabs:
+                with gr.Tab("Formatted"):
+                    response_formatted = gr.Markdown(
+                        label="Formatted Response",
+                        value=""
+                    )
+                with gr.Tab("Raw"):
+                    response_raw = gr.JSON(
+                        label="Raw API Response",
+                        value={}
+                    )
+
+    # Configuration event handlers
+    def update_config_from_preset(provider_name):
+        """Update configuration inputs when provider preset is selected."""
+        base_url, models, api_key_placeholder = get_provider_preset(provider_name)
+        # Convert default models to list for multi-select dropdown
+        models_list = [m.strip() for m in models.split(",") if m.strip()] if models else []
+        default_model = models_list[0] if models_list else None
+        return (
+            base_url,
+            gr.update(choices=models_list, value=models_list),
+            api_key_placeholder,
+            "",
+            gr.update(choices=models_list, value=default_model),
+            gr.update(choices=models_list, value=default_model)
+        )
+
+    def load_models_from_provider(api_key, base_url):
+        """Load available models from the provider's API."""
+        if not base_url and not api_key:
+            return (
+                gr.update(choices=[]),
+                "⚠️ Please configure Base URL and API Key first",
+                gr.update(choices=[]),
+                gr.update(choices=[])
             )
 
-    # JavaScript to handle dynamic variable inputs
-    template_input.change(
-        fn=update_variables_from_template,
-        inputs=[template_input, var_configs_state],
-        outputs=[var_configs_state, detected_vars_display]
+        success, result = fetch_available_models(api_key, base_url)
+
+        if success:
+            default_model = result[0] if result else None
+            return (
+                gr.update(choices=result, value=result),
+                f"✅ Loaded {len(result)} models successfully",
+                gr.update(choices=result, value=default_model),
+                gr.update(choices=result, value=default_model)
+            )
+        else:
+            return (
+                gr.update(choices=[]),
+                f"❌ {result}",
+                gr.update(choices=[]),
+                gr.update(choices=[])
+            )
+
+    def save_config_with_models(api_key, base_url, provider_name, selected_models_list,
+                               default_model, temperature, max_tokens):
+        """Save configuration with selected models."""
+        # Convert list to comma-separated string
+        models_str = ",".join(selected_models_list) if selected_models_list else ""
+        return save_config_to_env(api_key, base_url, provider_name, models_str,
+                                 default_model, temperature, max_tokens)
+
+    def update_default_model_choices(selected_models_list):
+        """Update the default model dropdown when selected models change."""
+        if not selected_models_list:
+            return gr.update(choices=[])
+        return gr.update(
+            choices=selected_models_list,
+            value=selected_models_list[0] if selected_models_list else None
+        )
+
+    provider_dropdown.change(
+        fn=update_config_from_preset,
+        inputs=[provider_dropdown],
+        outputs=[base_url_input, selected_models, api_key_input, models_status, config_model_dropdown, session_model_dropdown]
     )
 
-    parse_button.click(
-        fn=update_variables_from_template,
-        inputs=[template_input, var_configs_state],
-        outputs=[var_configs_state, detected_vars_display]
+    load_models_btn.click(
+        fn=load_models_from_provider,
+        inputs=[api_key_input, base_url_input],
+        outputs=[selected_models, models_status, config_model_dropdown, session_model_dropdown]
     )
 
-    # Test button
+    selected_models.change(
+        fn=update_default_model_choices,
+        inputs=[selected_models],
+        outputs=[config_model_dropdown]
+    )
+
+    save_config_btn.click(
+        fn=save_config_with_models,
+        inputs=[api_key_input, base_url_input, provider_dropdown, selected_models,
+                config_model_dropdown, config_temperature_slider, config_max_tokens_slider],
+        outputs=[config_status]
+    )
+
+    settings_btn.click(
+        fn=lambda: gr.Accordion(open=True),
+        outputs=[config_accordion]
+    )
+
+    # Main UI event handlers
+    parse_vars_btn.click(
+        fn=generate_variable_config_template,
+        inputs=[template_input],
+        outputs=[var_config_input]
+    )
+
+    def preview_prompt(template, var_config):
+        """Preview the formatted prompt without calling the API."""
+        formatted = format_prompt(template, var_config)
+        return formatted, "", {}, ""
+
+    def format_and_prepare(template, var_config):
+        """Format the prompt and show it immediately before API call."""
+        formatted = format_prompt(template, var_config)
+        if formatted.startswith("Error"):
+            return formatted, formatted, {}, ""
+        return formatted, "⏳ Calling API...", {}, ""
+
+    def call_api_async(template, var_config, model):
+        """Make the API call and return both formatted and raw responses."""
+        # Format the prompt again (needed for API call)
+        formatted = format_prompt(template, var_config)
+
+        if formatted.startswith("Error"):
+            return formatted, {"error": "Prompt formatting failed"}
+
+        # Call the API with the selected session model
+        formatted_response, raw_response = call_llm_api_full(
+            formatted,
+            model,
+            config_state["temperature"],
+            config_state["max_tokens"]
+        )
+        return formatted_response, raw_response
+
+    preview_button.click(
+        fn=preview_prompt,
+        inputs=[template_input, var_config_input],
+        outputs=[formatted_output, response_formatted, response_raw, save_status]
+    )
+
+    # Chain the test prompt: first format (immediate), then call API (async)
     test_button.click(
-        fn=test_prompt_with_vars,
-        inputs=[template_input, var_configs_state, model_dropdown, temperature_slider, max_tokens_slider],
-        outputs=[formatted_output, response_output, save_status]
+        fn=format_and_prepare,
+        inputs=[template_input, var_config_input],
+        outputs=[formatted_output, response_formatted, response_raw, save_status]
+    ).then(
+        fn=call_api_async,
+        inputs=[template_input, var_config_input, session_model_dropdown],
+        outputs=[response_formatted, response_raw]
     )
 
-    # Template management
+    def save_and_refresh(template, var_config, name):
+        """Save template and refresh the dropdown list."""
+        status = save_template(template, var_config, name)
+        return status, gr.update(choices=get_template_names())
+
     save_button.click(
-        fn=save_template,
-        inputs=[template_input, template_name_input, var_configs_state],
-        outputs=save_status
+        fn=save_and_refresh,
+        inputs=[template_input, var_config_input, template_name_input],
+        outputs=[save_status, template_dropdown]
     )
 
     load_button.click(
         fn=load_template,
-        inputs=template_name_input,
-        outputs=[template_input, var_configs_state, save_status]
-    )
-
-    list_button.click(
-        fn=list_templates,
-        outputs=save_status
+        inputs=[template_dropdown],
+        outputs=[template_input, var_config_input, save_status]
     )
 
 if __name__ == "__main__":
-    demo.launch(server_name="0.0.0.0", server_port=7860)
+    demo.launch(
+        server_name="0.0.0.0",
+        server_port=7860,
+        theme=gr.themes.Soft(),
+        css="""
+        .config-header { display: flex; align-items: center; justify-content: space-between; }
+    """)

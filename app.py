@@ -576,7 +576,7 @@ def create_ui():
             # ================================================================
             # MAIN CONTENT AREA (takes remaining space)
             # ================================================================
-            with gr.Column(scale=1):
+            with gr.Column(scale=1, elem_id="main-content"):
 
                 # Top Bar
                 with gr.Row():
@@ -585,7 +585,7 @@ def create_ui():
                 # ============================================================
                 # VIEW 1: PROMPT/VARIABLE EDITOR
                 # ============================================================
-                with gr.Column(visible=True) as prompts_view:
+                with gr.Column(visible=True, elem_id="prompts-view") as prompts_view:
                     gr.Markdown("## 📝 Prompt & Variable Editor")
 
                     # Prompt Selection
@@ -641,7 +641,7 @@ def create_ui():
                 # ============================================================
                 # VIEW 2: LLM COMPOSITION & TESTING
                 # ============================================================
-                with gr.Column(visible=False) as llm_view:
+                with gr.Column(visible=False, elem_id="llm-view") as llm_view:
                     gr.Markdown("## 🤖 LLM Testing")
 
                     # Model Selection
@@ -700,7 +700,7 @@ def create_ui():
                 # ============================================================
                 # VIEW 3: SETTINGS
                 # ============================================================
-                with gr.Column(visible=False) as settings_view:
+                with gr.Column(visible=False, elem_id="settings-view") as settings_view:
                     gr.Markdown("## ⚙️ Settings")
 
                     with gr.Accordion("Workspace Configuration", open=True):
@@ -955,7 +955,7 @@ if __name__ == "__main__":
         print(f"⚠️ Warning: {str(e)}")
         print("⚠️ Continuing without workspace...")
 
-    # Custom CSS for navigation
+    # Custom CSS for navigation and view switching
     custom_css = """
     #left-nav {
         max-width: 80px !important;
@@ -969,6 +969,23 @@ if __name__ == "__main__":
         max-width: 60px !important;
         height: 60px !important;
         padding: 8px !important;
+    }
+    /* Make views overlay each other in the same space */
+    #main-content {
+        position: relative !important;
+    }
+    #prompts-view, #llm-view, #settings-view {
+        position: relative !important;
+        width: 100% !important;
+    }
+    /* Hide inactive views completely */
+    #prompts-view[style*="display: none"],
+    #llm-view[style*="display: none"],
+    #settings-view[style*="display: none"] {
+        display: none !important;
+        visibility: hidden !important;
+        height: 0 !important;
+        overflow: hidden !important;
     }
     """
 

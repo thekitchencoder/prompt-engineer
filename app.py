@@ -550,7 +550,7 @@ def create_ui():
             # ================================================================
             # LEFT ICON NAVIGATION (fixed width)
             # ================================================================
-            with gr.Column(scale=0, min_width=80):
+            with gr.Column(scale=0, min_width=80, elem_id="left-nav"):
                 gr.Markdown("<br>")  # Top spacing
 
                 # Navigation buttons (icon-only, larger for visibility)
@@ -957,6 +957,12 @@ if __name__ == "__main__":
 
     # Custom CSS for navigation
     custom_css = """
+    #left-nav {
+        max-width: 80px !important;
+        min-width: 80px !important;
+        flex-grow: 0 !important;
+        flex-shrink: 0 !important;
+    }
     #nav-prompts, #nav-llm, #nav-settings {
         font-size: 32px !important;
         min-width: 60px !important;

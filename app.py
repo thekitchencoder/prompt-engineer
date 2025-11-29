@@ -340,6 +340,13 @@ def load_template(name: str):
 
     return template, var_config, f"Loaded: {name}"
 
+def get_template_names():
+    """Get list of available template names."""
+    if not os.path.exists("templates"):
+        return []
+    templates = [f.replace(".txt", "") for f in os.listdir("templates") if f.endswith(".txt")]
+    return sorted(templates)
+
 def list_templates():
     """List all saved templates."""
     if not os.path.exists("templates"):
@@ -479,6 +486,18 @@ with gr.Blocks(title="Prompt Engineer") as demo:
                 test_button = gr.Button("🚀 Test Prompt", variant="primary", size="lg")
 
             gr.Markdown("### 3. Template Management")
+
+            gr.Markdown("**Load Template**")
+            with gr.Row():
+                template_dropdown = gr.Dropdown(
+                    choices=get_template_names(),
+                    label="Select Template",
+                    placeholder="Choose a template to load...",
+                    scale=3
+                )
+                load_button = gr.Button("📂 Load", scale=1)
+
+            gr.Markdown("**Save New Template**")
             with gr.Row():
                 template_name_input = gr.Textbox(
                     label="Template Name",
@@ -486,8 +505,6 @@ with gr.Blocks(title="Prompt Engineer") as demo:
                     scale=3
                 )
                 save_button = gr.Button("💾 Save", scale=1)
-                load_button = gr.Button("📂 Load", scale=1)
-                list_button = gr.Button("📋 List", scale=1)
 
             save_status = gr.Textbox(label="Status", lines=3)
 
@@ -691,21 +708,21 @@ with gr.Blocks(title="Prompt Engineer") as demo:
         outputs=[response_formatted, response_raw]
     )
 
+    def save_and_refresh(template, var_config, name):
+        """Save template and refresh the dropdown list."""
+        status = save_template(template, var_config, name)
+        return status, gr.update(choices=get_template_names())
+
     save_button.click(
-        fn=save_template,
+        fn=save_and_refresh,
         inputs=[template_input, var_config_input, template_name_input],
-        outputs=[save_status]
+        outputs=[save_status, template_dropdown]
     )
 
     load_button.click(
         fn=load_template,
-        inputs=[template_name_input],
+        inputs=[template_dropdown],
         outputs=[template_input, var_config_input, save_status]
-    )
-
-    list_button.click(
-        fn=list_templates,
-        outputs=[save_status]
     )
 
 if __name__ == "__main__":

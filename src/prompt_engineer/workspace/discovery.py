@@ -198,14 +198,20 @@ class FileScanner:
 
         var_files = []
 
-        for file_path in vars_dir.glob(f"**/*{self.vars_extension}"):
-            if file_path.is_file():
-                # Extract name from filename (without extension)
-                name = file_path.stem
-                var_files.append(VarFile(
-                    path=file_path,
-                    name=name
-                ))
+        # Support multiple extensions: .yaml, .yml, and legacy .vars
+        extensions = [self.vars_extension, '.vars', '.yml']
+
+        for ext in extensions:
+            for file_path in vars_dir.glob(f"**/*{ext}"):
+                if file_path.is_file():
+                    # Extract name from filename (without extension)
+                    name = file_path.stem
+                    # Avoid duplicates if same file has multiple extensions
+                    if not any(vf.name == name for vf in var_files):
+                        var_files.append(VarFile(
+                            path=file_path,
+                            name=name
+                        ))
 
         return var_files
 
@@ -214,7 +220,7 @@ class FileScanner:
         Parse prompt filename to extract role and name.
 
         Args:
-            filename: Filename without extension (e.g., "system-evaluator")
+            filename: Filename without extension (e.g., "system-evaluator" or "evaluator")
 
         Returns:
             Tuple of (role, name)
@@ -223,7 +229,7 @@ class FileScanner:
             >>> scanner._parse_prompt_filename("system-evaluator")
             ("system", "evaluator")
             >>> scanner._parse_prompt_filename("evaluator")
-            (None, None)
+            (None, "evaluator")  # Single-file prompt without role
         """
         # Try to match pattern: {role}-{name}
         # Common roles: system, user, assistant, context
@@ -235,8 +241,9 @@ class FileScanner:
             if role in ['system', 'user', 'assistant', 'context']:
                 return (role, name)
 
-        # Doesn't match expected pattern
-        return (None, None)
+        # No role prefix - treat as single-file prompt with implicit "user" role
+        # This allows files like "data_analysis.txt" to be discovered
+        return (None, filename)
 
 
 class PromptMatcher:
@@ -275,8 +282,9 @@ class PromptMatcher:
             if prompt.name:
                 if prompt.name not in prompts_by_name:
                     prompts_by_name[prompt.name] = {}
-                if prompt.role:
-                    prompts_by_name[prompt.name][prompt.role] = prompt
+                # Use role if available, otherwise use "prompt" for single-file prompts
+                role_key = prompt.role if prompt.role else "prompt"
+                prompts_by_name[prompt.name][role_key] = prompt
 
         # Create var_files lookup
         vars_by_name = {vf.name: vf for vf in var_files}

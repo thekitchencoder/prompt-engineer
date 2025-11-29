@@ -220,6 +220,32 @@ def load_prompt_set(prompt_name: str) -> Tuple[str, str, str, str]:
         if not prompt_set:
             return "", "", "", f"❌ Prompt set '{prompt_name}' not found"
 
+        # Check if this is a single-file prompt (role="prompt")
+        if "prompt" in prompt_set.prompts and len(prompt_set.prompts) == 1:
+            # Single-file prompt - load into user prompt field
+            prompt_file = prompt_set.prompts["prompt"]
+            with open(prompt_file.path, 'r', encoding='utf-8') as f:
+                content = f.read()
+
+            # Load variables if available
+            variables_info = "## Variables\n\n*No variables configured*"
+            if prompt_set.var_file:
+                template = workspace.load_template(prompt_name)
+                if template and template.variables:
+                    variables_info = "## Variables\n\n"
+                    for var_name, var in template.variables.items():
+                        variables_info += f"### {var_name}\n"
+                        variables_info += f"**Type:** {var.type.value}\n\n"
+                        if var.description:
+                            variables_info += f"*{var.description}*\n\n"
+                        if var.type.value == "file":
+                            variables_info += f"**File:** `{var.content}`\n\n"
+                        else:
+                            variables_info += f"**Value:**\n```\n{var.content}\n```\n\n"
+
+            return "", content, variables_info, f"✅ Loaded single-file prompt: {prompt_name}"
+
+        # Multi-role prompt (system + user)
         # Load template
         template = workspace.load_template(prompt_name)
         if not template:
@@ -239,17 +265,20 @@ def load_prompt_set(prompt_name: str) -> Tuple[str, str, str, str]:
 
         # Format variables
         variables_info = "## Variables\n\n"
-        for var_name, var in template.variables.items():
-            variables_info += f"### {var_name}\n"
-            variables_info += f"**Type:** {var.type.value}\n\n"
+        if template.variables:
+            for var_name, var in template.variables.items():
+                variables_info += f"### {var_name}\n"
+                variables_info += f"**Type:** {var.type.value}\n\n"
 
-            if var.description:
-                variables_info += f"*{var.description}*\n\n"
+                if var.description:
+                    variables_info += f"*{var.description}*\n\n"
 
-            if var.type.value == "file":
-                variables_info += f"**File:** `{var.content}`\n\n"
-            else:
-                variables_info += f"**Value:**\n```\n{var.content}\n```\n\n"
+                if var.type.value == "file":
+                    variables_info += f"**File:** `{var.content}`\n\n"
+                else:
+                    variables_info += f"**Value:**\n```\n{var.content}\n```\n\n"
+        else:
+            variables_info += "*No variables configured*"
 
         status = f"✅ Loaded prompt set: {prompt_name}"
 
@@ -277,7 +306,7 @@ def save_prompt_file(prompt_name: str, role: str, content: str) -> str:
 
     Args:
         prompt_name: Name of the prompt set
-        role: Role (system/user)
+        role: Role (system/user/prompt)
         content: New content to save
 
     Returns:
@@ -292,6 +321,10 @@ def save_prompt_file(prompt_name: str, role: str, content: str) -> str:
         prompt_set = workspace.get_prompt_set(prompt_name)
         if not prompt_set:
             return f"❌ Prompt set '{prompt_name}' not found"
+
+        # For single-file prompts, map "user" role to "prompt" role
+        if "prompt" in prompt_set.prompts and role == "user":
+            role = "prompt"
 
         # Find the prompt file for this role
         if role not in prompt_set.prompts:
@@ -331,6 +364,108 @@ def extract_variables_from_prompt(content: str) -> List[str]:
 
     # Use the parser from workspace
     return workspace.parser.extract_variables(content)
+
+
+def create_new_prompt(prompt_name: str, prompt_type: str) -> Tuple[str, List[str]]:
+    """
+    Create a new prompt set with system/user prompts and variable file.
+
+    Args:
+        prompt_name: Name for the new prompt (e.g., "code_review")
+        prompt_type: Type of prompt structure ("single" or "multi-role")
+
+    Returns:
+        Tuple of (status_message, updated_prompt_choices)
+    """
+    workspace = workspace_manager.get_current_workspace()
+    if not workspace:
+        return "❌ No workspace open", []
+
+    if not prompt_name or not prompt_name.strip():
+        return "❌ Please enter a prompt name", []
+
+    # Sanitize prompt name (remove spaces, special chars)
+    import re
+    safe_name = re.sub(r'[^a-zA-Z0-9_-]', '_', prompt_name.strip().lower())
+
+    try:
+        config = workspace.config
+        prompt_dir = workspace.root_path / config.layout.prompt_dir
+        vars_dir = workspace.root_path / config.layout.vars_dir
+
+        # Create directories if they don't exist
+        prompt_dir.mkdir(parents=True, exist_ok=True)
+        vars_dir.mkdir(parents=True, exist_ok=True)
+
+        prompt_ext = config.layout.prompt_extension
+        vars_ext = config.layout.vars_extension
+
+        if prompt_type == "multi-role":
+            # Create system and user prompt files
+            system_file = prompt_dir / f"system-{safe_name}{prompt_ext}"
+            user_file = prompt_dir / f"user-{safe_name}{prompt_ext}"
+
+            if system_file.exists() or user_file.exists():
+                return f"❌ Prompt '{safe_name}' already exists", get_prompt_names()
+
+            # Write system prompt template
+            system_file.write_text(
+                f"You are a helpful assistant.\n\n"
+                f"{{context}}\n\n"
+                f"Please help with the following task.",
+                encoding='utf-8'
+            )
+
+            # Write user prompt template
+            user_file.write_text(
+                f"{{user_request}}\n\n"
+                f"Please provide a detailed response.",
+                encoding='utf-8'
+            )
+
+            created_files = f"system-{safe_name}{prompt_ext}, user-{safe_name}{prompt_ext}"
+
+        else:  # single file
+            prompt_file = prompt_dir / f"{safe_name}{prompt_ext}"
+
+            if prompt_file.exists():
+                return f"❌ Prompt '{safe_name}' already exists", get_prompt_names()
+
+            # Write single prompt template
+            prompt_file.write_text(
+                f"{{input}}\n\n"
+                f"Please provide a response to the above.",
+                encoding='utf-8'
+            )
+
+            created_files = f"{safe_name}{prompt_ext}"
+
+        # Create variable file
+        var_file = vars_dir / f"{safe_name}{vars_ext}"
+        if not var_file.exists():
+            # Create a basic YAML variable file
+            var_file.write_text(
+                f"# Variable configuration for {safe_name}\n"
+                f"# Format:\n"
+                f"# variable_name:\n"
+                f"#   type: file|value\n"
+                f"#   path: path/to/file.txt  (for type: file)\n"
+                f"#   value: \"text value\"     (for type: value)\n"
+                f"#   description: \"Description of variable\"\n",
+                encoding='utf-8'
+            )
+
+        # Trigger re-discovery
+        workspace.discover_prompts()
+
+        return (
+            f"✅ Created new prompt: {created_files}\n"
+            f"📝 Variable file: {safe_name}{vars_ext}",
+            get_prompt_names()
+        )
+
+    except Exception as e:
+        return f"❌ Error creating prompt: {str(e)}", get_prompt_names()
 
 
 def get_workspace_header() -> str:
@@ -502,15 +637,34 @@ def create_ui():
                     # ============================================================
                     with gr.Tab("📝 Prompt Editor", id="prompt_editor"):
 
-                        # Prompt Selection
+                        # Prompt Selection and Creation
                         with gr.Row():
                             prompt_selector = gr.Dropdown(
                                 label="Select Prompt",
                                 choices=[],
                                 interactive=True,
-                                scale=4
+                                scale=3
                             )
                             load_prompt_btn = gr.Button("🔄 Load", scale=1)
+                            create_new_btn = gr.Button("➕ New", size="sm", variant="secondary", scale=1)
+
+                        # Create New Prompt Dialog (collapsed by default)
+                        with gr.Accordion("Create New Prompt", open=False, visible=False) as create_prompt_accordion:
+                            with gr.Row():
+                                new_prompt_name = gr.Textbox(
+                                    label="Prompt Name",
+                                    placeholder="e.g., code_review, data_analysis",
+                                    scale=2
+                                )
+                                new_prompt_type = gr.Radio(
+                                    label="Type",
+                                    choices=["single", "multi-role"],
+                                    value="multi-role",
+                                    info="Single=one file, Multi-role=system+user files",
+                                    scale=1
+                                )
+
+                            create_confirm_btn = gr.Button("✅ Create Prompt", variant="primary")
 
                         prompt_status = gr.Textbox(
                             label="Status",
@@ -731,6 +885,32 @@ def create_ui():
             fn=update_user_vars,
             inputs=[user_prompt_display],
             outputs=[user_vars_display]
+        )
+
+        # Create New Prompt functionality
+        def toggle_create_dialog():
+            """Toggle the create new prompt dialog."""
+            return gr.update(visible=True, open=True)
+
+        create_new_btn.click(
+            fn=toggle_create_dialog,
+            outputs=[create_prompt_accordion]
+        )
+
+        def handle_create_new_prompt(name, ptype):
+            """Create a new prompt and update UI."""
+            status, prompt_choices = create_new_prompt(name, ptype)
+            return (
+                status,
+                gr.update(choices=prompt_choices),
+                gr.update(visible=False, open=False),  # Hide create dialog
+                ""  # Clear name field
+            )
+
+        create_confirm_btn.click(
+            fn=handle_create_new_prompt,
+            inputs=[new_prompt_name, new_prompt_type],
+            outputs=[prompt_status, prompt_selector, create_prompt_accordion, new_prompt_name]
         )
 
     return app

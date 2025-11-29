@@ -565,27 +565,17 @@ with gr.Blocks(title="Prompt Engineer") as demo:
 
             gr.Markdown("### API Response")
 
-            with gr.Row():
-                view_mode = gr.Radio(
-                    choices=["Formatted", "Raw"],
-                    value="Formatted",
-                    label="View Mode",
-                    info="Toggle between formatted output and raw API response"
-                )
-
-            # Formatted view - renders markdown/JSON/YAML
-            with gr.Column(visible=True) as formatted_box:
-                response_formatted = gr.Markdown(
-                    label="Formatted Response",
-                    value=""
-                )
-
-            # Raw view - shows full API response as JSON
-            with gr.Column(visible=False) as raw_box:
-                response_raw = gr.JSON(
-                    label="Raw API Response",
-                    value={}
-                )
+            with gr.Tabs() as response_tabs:
+                with gr.Tab("Formatted"):
+                    response_formatted = gr.Markdown(
+                        label="Formatted Response",
+                        value=""
+                    )
+                with gr.Tab("Raw"):
+                    response_raw = gr.JSON(
+                        label="Raw API Response",
+                        value={}
+                    )
 
     # Configuration event handlers
     def update_config_from_preset(provider_name):
@@ -713,19 +703,6 @@ with gr.Blocks(title="Prompt Engineer") as demo:
             config_state["max_tokens"]
         )
         return formatted_response, raw_response
-
-    def toggle_view(mode):
-        """Toggle between formatted and raw response views."""
-        if mode == "Formatted":
-            return gr.update(visible=True), gr.update(visible=False)
-        else:  # Raw
-            return gr.update(visible=False), gr.update(visible=True)
-
-    view_mode.change(
-        fn=toggle_view,
-        inputs=[view_mode],
-        outputs=[formatted_box, raw_box]
-    )
 
     preview_button.click(
         fn=preview_prompt,

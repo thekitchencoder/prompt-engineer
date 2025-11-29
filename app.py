@@ -579,20 +579,35 @@ with gr.Blocks(title="Prompt Engineer") as demo:
         formatted = format_prompt(template, var_config)
         return formatted, "", ""
 
-    def test_with_config(template, var_config):
-        """Test prompt using configuration state."""
+    def format_and_prepare(template, var_config):
+        """Format the prompt and show it immediately before API call."""
+        formatted = format_prompt(template, var_config)
+        if formatted.startswith("Error"):
+            return formatted, formatted, ""
+        return formatted, "⏳ Calling API...", ""
+
+    def call_api_async(template, var_config):
+        """Make the API call and return the response."""
         # Use configured default_model, or fallback to first available model
         model = config_state.get("default_model") or (
             config_state.get("models", "").split(",")[0] if config_state.get("models")
             else MODELS[0] if MODELS else "gpt-4o"
         )
-        return test_prompt_handler(
-            template,
-            var_config,
+
+        # Format the prompt again (needed for API call)
+        formatted = format_prompt(template, var_config)
+
+        if formatted.startswith("Error"):
+            return formatted
+
+        # Call the API
+        response = call_llm_api(
+            formatted,
             model,
             config_state["temperature"],
             config_state["max_tokens"]
         )
+        return response
 
     preview_button.click(
         fn=preview_prompt,
@@ -600,10 +615,15 @@ with gr.Blocks(title="Prompt Engineer") as demo:
         outputs=[formatted_output, response_output, save_status]
     )
 
+    # Chain the test prompt: first format (immediate), then call API (async)
     test_button.click(
-        fn=test_with_config,
+        fn=format_and_prepare,
         inputs=[template_input, var_config_input],
         outputs=[formatted_output, response_output, save_status]
+    ).then(
+        fn=call_api_async,
+        inputs=[template_input, var_config_input],
+        outputs=[response_output]
     )
 
     save_button.click(

@@ -643,7 +643,18 @@ def create_ui():
                                 )
                                 save_vars_btn = gr.Button("💾 Save Variables", variant="primary")
 
-                        editor_status = gr.Textbox(label="Status", interactive=False, lines=1, show_label=False)
+                        editor_status = gr.Textbox(
+                            label="Status",
+                            interactive=False,
+                            lines=2,
+                            max_lines=5,
+                            show_label=False,
+                            container=False
+                        )
+
+                        # Hidden state to track unsaved changes
+                        original_prompt_content = gr.State("")
+                        original_vars_content = gr.State("")
 
                     # ============================================================
                     # VIEW 2: LLM COMPOSITION & TESTING
@@ -768,16 +779,16 @@ def create_ui():
         def load_prompt_for_editing(prompt_name):
             """Load a prompt for editing."""
             if not prompt_name:
-                return "", "*No file selected*", "*No variables*", "", ""
+                return "", "*No file selected*", "*No variables*", "", "", "", ""
 
             workspace = workspace_manager.get_current_workspace()
             if not workspace:
-                return "", "*No workspace*", "*No variables*", "", ""
+                return "", "*No workspace*", "*No variables*", "", "", "", ""
 
             try:
                 prompt_set = workspace.get_prompt_set(prompt_name)
                 if not prompt_set:
-                    return "", "*Not found*", "*No variables*", "", f"❌ Prompt '{prompt_name}' not found"
+                    return "", "*Not found*", "*No variables*", "", f"❌ Prompt '{prompt_name}' not found", "", ""
 
                 # Load variables if available
                 var_content = ""
@@ -790,7 +801,7 @@ def create_ui():
 
                 # Get the first available prompt file
                 if not prompt_set.prompts:
-                    return "", "*No prompt files*", "*No variables*", var_content, f"❌ No prompt files for '{prompt_name}'"
+                    return "", "*No prompt files*", "*No variables*", var_content, f"❌ No prompt files for '{prompt_name}'", "", var_content
 
                 # Load the first prompt file (or 'prompt' if it exists)
                 prompt_file = None
@@ -812,32 +823,47 @@ def create_ui():
 
                 file_info = f"📄 `{file_name}`"
 
-                return content, file_info, vars_md, var_content, f"✅ Loaded {prompt_name}"
+                return content, file_info, vars_md, var_content, f"✅ Loaded {prompt_name}", content, var_content
 
             except Exception as e:
-                return "", "*Error*", "*No variables*", "", f"❌ Error: {str(e)}"
+                return "", "*Error*", "*No variables*", "", f"❌ Error: {str(e)}", "", ""
+
+        # Check for unsaved changes
+        def check_dirty_state(current_prompt, original_prompt, current_vars, original_vars):
+            """Check if there are unsaved changes and update status."""
+            prompt_changed = current_prompt != original_prompt
+            vars_changed = current_vars != original_vars
+
+            if prompt_changed and vars_changed:
+                return "⚠️ Prompt and Variables have unsaved changes"
+            elif prompt_changed:
+                return "⚠️ Prompt has unsaved changes"
+            elif vars_changed:
+                return "⚠️ Variables have unsaved changes"
+            else:
+                return ""
 
         # Trigger load on prompt selection change
         prompt_selector.change(
             fn=load_prompt_for_editing,
             inputs=[prompt_selector],
-            outputs=[prompt_editor, prompt_file_info, prompt_vars_display, variables_editor, editor_status]
+            outputs=[prompt_editor, prompt_file_info, prompt_vars_display, variables_editor, editor_status, original_prompt_content, original_vars_content]
         )
 
         # Save prompt
         def save_current_prompt(prompt_name, content):
             """Save the current prompt content."""
             if not prompt_name:
-                return "❌ No prompt selected"
+                return "❌ No prompt selected", content
 
             workspace = workspace_manager.get_current_workspace()
             if not workspace:
-                return "❌ No workspace open"
+                return "❌ No workspace open", content
 
             try:
                 prompt_set = workspace.get_prompt_set(prompt_name)
                 if not prompt_set:
-                    return f"❌ Prompt set '{prompt_name}' not found"
+                    return f"❌ Prompt set '{prompt_name}' not found", content
 
                 # Get the first prompt file to save to
                 prompt_file = None
@@ -850,15 +876,15 @@ def create_ui():
                 with open(prompt_file.path, 'w', encoding='utf-8') as f:
                     f.write(content)
 
-                return f"✅ Saved to {prompt_file.path.name}"
+                return f"✅ Saved to {prompt_file.path.name}", content
 
             except Exception as e:
-                return f"❌ Error saving prompt: {str(e)}"
+                return f"❌ Error saving prompt: {str(e)}", content
 
         save_prompt_btn.click(
             fn=save_current_prompt,
             inputs=[prompt_selector, prompt_editor],
-            outputs=[editor_status]
+            outputs=[editor_status, original_prompt_content]
         )
 
         # Save variables YAML file
@@ -866,15 +892,15 @@ def create_ui():
             """Save the variables YAML file."""
             workspace = workspace_manager.get_current_workspace()
             if not workspace:
-                return "❌ No workspace open"
+                return "❌ No workspace open", var_content
 
             if not prompt_name:
-                return "❌ No prompt selected"
+                return "❌ No prompt selected", var_content
 
             try:
                 prompt_set = workspace.get_prompt_set(prompt_name)
                 if not prompt_set:
-                    return f"❌ Prompt set '{prompt_name}' not found"
+                    return f"❌ Prompt set '{prompt_name}' not found", var_content
 
                 # Get or create variable file path
                 if prompt_set.var_file:
@@ -891,28 +917,44 @@ def create_ui():
                 with open(var_file_path, 'w', encoding='utf-8') as f:
                     f.write(var_content)
 
-                return f"✅ Saved variables to {var_file_path.name}"
+                return f"✅ Saved variables to {var_file_path.name}", var_content
 
             except Exception as e:
-                return f"❌ Error saving variables: {str(e)}"
+                return f"❌ Error saving variables: {str(e)}", var_content
 
         save_vars_btn.click(
             fn=save_variables_file,
             inputs=[prompt_selector, variables_editor],
-            outputs=[editor_status]
+            outputs=[editor_status, original_vars_content]
         )
 
-        # Live variable extraction
-        def update_vars_display(content):
+        # Combined function for prompt editor changes
+        def on_prompt_change(content, original_prompt, current_vars, original_vars):
+            """Update variable display and check dirty state."""
+            # Extract variables
             vars_list = extract_variables_from_prompt(content)
             if vars_list:
-                return "**Variables:** " + ", ".join([f"`{{{v}}}`" for v in vars_list])
-            return "*No variables detected*"
+                vars_md = "**Variables:** " + ", ".join([f"`{{{v}}}`" for v in vars_list])
+            else:
+                vars_md = "*No variables detected*"
 
+            # Check dirty state
+            status = check_dirty_state(content, original_prompt, current_vars, original_vars)
+
+            return vars_md, status
+
+        # Track changes in prompt editor
         prompt_editor.change(
-            fn=update_vars_display,
-            inputs=[prompt_editor],
-            outputs=[prompt_vars_display]
+            fn=on_prompt_change,
+            inputs=[prompt_editor, original_prompt_content, variables_editor, original_vars_content],
+            outputs=[prompt_vars_display, editor_status]
+        )
+
+        # Track changes in variables editor
+        variables_editor.change(
+            fn=check_dirty_state,
+            inputs=[prompt_editor, original_prompt_content, variables_editor, original_vars_content],
+            outputs=[editor_status]
         )
 
         # New Prompt Dialog handlers
@@ -927,8 +969,16 @@ def create_ui():
         def handle_create_prompt(name):
             """Create a new prompt and refresh the list."""
             status, updated_choices, _ = create_new_prompt(name, "single")
-            # Hide dialog, clear name field, update dropdown, show status
-            return gr.update(visible=False), "", gr.update(choices=updated_choices), status
+            # Get the safe name that was actually created
+            import re
+            safe_name = re.sub(r'[^a-zA-Z0-9_-]', '_', name.strip().lower())
+            # Hide dialog, clear name field, update dropdown with new prompt selected, show status
+            return (
+                gr.update(visible=False),
+                "",
+                gr.update(choices=updated_choices, value=safe_name),
+                status
+            )
 
         create_new_btn.click(
             fn=show_create_dialog,
@@ -954,11 +1004,11 @@ def create_ui():
                 # Load the first prompt
                 return load_prompt_for_editing(prompt_names[0])
             # Return empty values
-            return "", "*No prompts found*", "*No variables*", "", ""
+            return "", "*No prompts found*", "*No variables*", "", "", "", ""
 
         app.load(
             fn=on_app_load,
-            outputs=[prompt_editor, prompt_file_info, prompt_vars_display, variables_editor, editor_status]
+            outputs=[prompt_editor, prompt_file_info, prompt_vars_display, variables_editor, editor_status, original_prompt_content, original_vars_content]
         )
 
     return app

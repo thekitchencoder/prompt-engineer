@@ -543,38 +543,51 @@ def create_ui():
 
     with gr.Blocks(title="Prompt Engineer") as app:
 
+        # Inject custom CSS for fixed-width nav and larger icons
+        gr.HTML("""
+        <style>
+        #nav-prompts, #nav-llm, #nav-settings {
+            font-size: 32px !important;
+            min-width: 60px !important;
+            max-width: 60px !important;
+            height: 60px !important;
+            padding: 8px !important;
+        }
+        </style>
+        """)
+
         # ================================================================
         # Main Layout: Icon Nav + Content Area
         # ================================================================
         with gr.Row():
             # ================================================================
-            # LEFT ICON NAVIGATION (minimal)
+            # LEFT ICON NAVIGATION (fixed width)
             # ================================================================
-            with gr.Column(scale=0, min_width=50):
+            with gr.Column(scale=0, min_width=80):
                 gr.Markdown("<br>")  # Top spacing
 
-                # Navigation buttons (icon-only style)
+                # Navigation buttons (icon-only, larger for visibility)
                 prompts_nav_btn = gr.Button(
                     "📝",
-                    size="sm",
+                    size="lg",
                     variant="primary",  # Active by default
-                    min_width=40
+                    elem_id="nav-prompts"
                 )
                 llm_nav_btn = gr.Button(
                     "🤖",
-                    size="sm",
+                    size="lg",
                     variant="secondary",  # Inactive by default
-                    min_width=40
+                    elem_id="nav-llm"
                 )
                 settings_nav_btn = gr.Button(
                     "⚙️",
-                    size="sm",
+                    size="lg",
                     variant="secondary",  # Inactive by default
-                    min_width=40
+                    elem_id="nav-settings"
                 )
 
             # ================================================================
-            # MAIN CONTENT AREA
+            # MAIN CONTENT AREA (takes remaining space)
             # ================================================================
             with gr.Column(scale=1):
 

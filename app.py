@@ -264,6 +264,32 @@ def call_llm_api(prompt: str, model: str, temperature: float, max_tokens: int) -
     except Exception as e:
         return f"Error calling {config_state['provider_name']} API: {e}"
 
+def call_llm_api_full(prompt: str, model: str, temperature: float, max_tokens: int) -> tuple:
+    """
+    Call OpenAI-compatible API and return both formatted content and raw response.
+    Returns: (formatted_content: str, raw_response: dict)
+    """
+    try:
+        # Reinitialize client in case config changed
+        current_client = initialize_client()
+        response = current_client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=temperature,
+            max_tokens=max_tokens
+        )
+
+        # Extract formatted content
+        formatted_content = response.choices[0].message.content
+
+        # Convert response to dict for raw view
+        raw_response = response.model_dump()
+
+        return formatted_content, raw_response
+    except Exception as e:
+        error_msg = f"Error calling {config_state['provider_name']} API: {e}"
+        return error_msg, {"error": str(e)}
+
 def test_prompt_handler(template: str, var_config: str, model: str, temperature: float, max_tokens: int):
     """Test the prompt with variable configurations."""
     formatted_prompt = format_prompt(template, var_config)
@@ -485,10 +511,27 @@ with gr.Blocks(title="Prompt Engineer") as demo:
             )
 
             gr.Markdown("### API Response")
-            response_output = gr.Textbox(
-                label="Model Output",
-                lines=20,
-                interactive=False
+
+            with gr.Row():
+                view_mode = gr.Radio(
+                    choices=["Formatted", "Raw"],
+                    value="Formatted",
+                    label="View Mode",
+                    info="Toggle between formatted output and raw API response"
+                )
+
+            # Formatted view - renders markdown/JSON/YAML
+            response_formatted = gr.Markdown(
+                label="Formatted Response",
+                value="",
+                visible=True
+            )
+
+            # Raw view - shows full API response as JSON
+            response_raw = gr.JSON(
+                label="Raw API Response",
+                value=None,
+                visible=False
             )
 
     # Configuration event handlers
@@ -592,47 +635,60 @@ with gr.Blocks(title="Prompt Engineer") as demo:
     def preview_prompt(template, var_config):
         """Preview the formatted prompt without calling the API."""
         formatted = format_prompt(template, var_config)
-        return formatted, "", ""
+        return formatted, "", None, ""
 
     def format_and_prepare(template, var_config):
         """Format the prompt and show it immediately before API call."""
         formatted = format_prompt(template, var_config)
         if formatted.startswith("Error"):
-            return formatted, formatted, ""
-        return formatted, "⏳ Calling API...", ""
+            return formatted, formatted, None, ""
+        return formatted, "⏳ Calling API...", None, ""
 
     def call_api_async(template, var_config, model):
-        """Make the API call and return the response."""
+        """Make the API call and return both formatted and raw responses."""
         # Format the prompt again (needed for API call)
         formatted = format_prompt(template, var_config)
 
         if formatted.startswith("Error"):
-            return formatted
+            return formatted, {"error": "Prompt formatting failed"}
 
         # Call the API with the selected session model
-        response = call_llm_api(
+        formatted_response, raw_response = call_llm_api_full(
             formatted,
             model,
             config_state["temperature"],
             config_state["max_tokens"]
         )
-        return response
+        return formatted_response, raw_response
+
+    def toggle_view(mode):
+        """Toggle between formatted and raw response views."""
+        if mode == "Formatted":
+            return gr.Markdown(visible=True), gr.JSON(visible=False)
+        else:  # Raw
+            return gr.Markdown(visible=False), gr.JSON(visible=True)
+
+    view_mode.change(
+        fn=toggle_view,
+        inputs=[view_mode],
+        outputs=[response_formatted, response_raw]
+    )
 
     preview_button.click(
         fn=preview_prompt,
         inputs=[template_input, var_config_input],
-        outputs=[formatted_output, response_output, save_status]
+        outputs=[formatted_output, response_formatted, response_raw, save_status]
     )
 
     # Chain the test prompt: first format (immediate), then call API (async)
     test_button.click(
         fn=format_and_prepare,
         inputs=[template_input, var_config_input],
-        outputs=[formatted_output, response_output, save_status]
+        outputs=[formatted_output, response_formatted, response_raw, save_status]
     ).then(
         fn=call_api_async,
         inputs=[template_input, var_config_input, session_model_dropdown],
-        outputs=[response_output]
+        outputs=[response_formatted, response_raw]
     )
 
     save_button.click(

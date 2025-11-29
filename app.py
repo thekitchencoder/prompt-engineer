@@ -583,7 +583,7 @@ with gr.Blocks(title="Prompt Engineer") as demo:
             # Raw view - shows full API response as JSON
             response_raw = gr.JSON(
                 label="Raw API Response",
-                value=None,
+                value={},
                 visible=False
             )
 
@@ -688,14 +688,14 @@ with gr.Blocks(title="Prompt Engineer") as demo:
     def preview_prompt(template, var_config):
         """Preview the formatted prompt without calling the API."""
         formatted = format_prompt(template, var_config)
-        return formatted, "", None, ""
+        return formatted, "", {}, ""
 
     def format_and_prepare(template, var_config):
         """Format the prompt and show it immediately before API call."""
         formatted = format_prompt(template, var_config)
         if formatted.startswith("Error"):
-            return formatted, formatted, None, ""
-        return formatted, "⏳ Calling API...", None, ""
+            return formatted, formatted, {}, ""
+        return formatted, "⏳ Calling API...", {}, ""
 
     def call_api_async(template, var_config, model):
         """Make the API call and return both formatted and raw responses."""

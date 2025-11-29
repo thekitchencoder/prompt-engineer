@@ -1,0 +1,10 @@
+# Variable configuration for testing
+description: "Prompt for testing"
+variables: {}
+  # Add your variables here. Example:
+  # variable_name:
+  #   type: file  # or 'value'
+  #   path: path/to/file.txt  # for type: file
+  #   # OR
+  #   value: "text content"  # for type: value
+  #   description: "Variable description"

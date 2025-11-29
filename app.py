@@ -598,6 +598,25 @@ def create_ui():
                         )
                         create_new_btn = gr.Button("➕ New", size="sm", scale=1)
 
+                    # New Prompt Dialog (hidden by default)
+                    with gr.Column(visible=False) as new_prompt_dialog:
+                        gr.Markdown("### Create New Prompt")
+                        with gr.Row():
+                            new_prompt_name = gr.Textbox(
+                                label="Prompt Name",
+                                placeholder="e.g., code_review",
+                                scale=2
+                            )
+                            new_prompt_type = gr.Radio(
+                                label="Type",
+                                choices=["single", "multi-role"],
+                                value="single",
+                                scale=1
+                            )
+                        with gr.Row():
+                            create_prompt_btn = gr.Button("Create", variant="primary", scale=1)
+                            cancel_create_btn = gr.Button("Cancel", scale=1)
+
                     # Role and File Management
                     with gr.Row():
                         with gr.Column(scale=1):
@@ -911,14 +930,36 @@ def create_ui():
             outputs=[prompt_vars_display]
         )
 
-        # Create New Prompt Dialog (inline)
-        def handle_create_new_prompt():
-            """Show a simple prompt dialog for creating new prompts."""
-            # For now, we'll use a simple textbox. In future, could add a modal dialog.
-            return "✏️ Enter prompt name below and click 'Create Single File' or 'Create Multi-Role'"
+        # New Prompt Dialog handlers
+        def show_create_dialog():
+            """Show the create new prompt dialog."""
+            return gr.update(visible=True)
 
-        # Note: For MVP, we'll skip the create dialog UI and handle it in a future update
-        # The create_new_prompt function exists but needs UI components to call it
+        def hide_create_dialog():
+            """Hide the create new prompt dialog."""
+            return gr.update(visible=False), ""
+
+        def handle_create_prompt(name, ptype):
+            """Create a new prompt and refresh the list."""
+            status, updated_choices, _ = create_new_prompt(name, ptype)
+            # Hide dialog, clear name field, update dropdown, show status
+            return gr.update(visible=False), "", gr.update(choices=updated_choices), status
+
+        create_new_btn.click(
+            fn=show_create_dialog,
+            outputs=[new_prompt_dialog]
+        )
+
+        cancel_create_btn.click(
+            fn=hide_create_dialog,
+            outputs=[new_prompt_dialog, new_prompt_name]
+        )
+
+        create_prompt_btn.click(
+            fn=handle_create_prompt,
+            inputs=[new_prompt_name, new_prompt_type],
+            outputs=[new_prompt_dialog, new_prompt_name, prompt_selector, editor_status]
+        )
 
         # Trigger initial load if a prompt is selected
         def on_app_load():

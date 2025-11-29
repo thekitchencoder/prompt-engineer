@@ -366,7 +366,7 @@ def extract_variables_from_prompt(content: str) -> List[str]:
     return workspace.parser.extract_variables(content)
 
 
-def create_new_prompt(prompt_name: str, prompt_type: str) -> Tuple[str, List[str]]:
+def create_new_prompt(prompt_name: str, prompt_type: str) -> Tuple[str, List[str], str]:
     """
     Create a new prompt set with system/user prompts and variable file.
 
@@ -375,14 +375,14 @@ def create_new_prompt(prompt_name: str, prompt_type: str) -> Tuple[str, List[str
         prompt_type: Type of prompt structure ("single" or "multi-role")
 
     Returns:
-        Tuple of (status_message, updated_prompt_choices)
+        Tuple of (status_message, updated_prompt_choices, updated_nav_list)
     """
     workspace = workspace_manager.get_current_workspace()
     if not workspace:
-        return "❌ No workspace open", []
+        return "❌ No workspace open", [], "*No prompts*"
 
     if not prompt_name or not prompt_name.strip():
-        return "❌ Please enter a prompt name", []
+        return "❌ Please enter a prompt name", [], "*No prompts*"
 
     # Sanitize prompt name (remove spaces, special chars)
     import re
@@ -406,7 +406,7 @@ def create_new_prompt(prompt_name: str, prompt_type: str) -> Tuple[str, List[str
             user_file = prompt_dir / f"user-{safe_name}{prompt_ext}"
 
             if system_file.exists() or user_file.exists():
-                return f"❌ Prompt '{safe_name}' already exists", get_prompt_names()
+                return f"❌ Prompt '{safe_name}' already exists", get_prompt_names(), format_prompts_list_nav(workspace.discover_prompts())
 
             # Write system prompt template
             system_file.write_text(
@@ -429,7 +429,7 @@ def create_new_prompt(prompt_name: str, prompt_type: str) -> Tuple[str, List[str
             prompt_file = prompt_dir / f"{safe_name}{prompt_ext}"
 
             if prompt_file.exists():
-                return f"❌ Prompt '{safe_name}' already exists", get_prompt_names()
+                return f"❌ Prompt '{safe_name}' already exists", get_prompt_names(), format_prompts_list_nav(workspace.discover_prompts())
 
             # Write single prompt template
             prompt_file.write_text(
@@ -443,29 +443,34 @@ def create_new_prompt(prompt_name: str, prompt_type: str) -> Tuple[str, List[str
         # Create variable file
         var_file = vars_dir / f"{safe_name}{vars_ext}"
         if not var_file.exists():
-            # Create a basic YAML variable file
+            # Create a basic YAML variable file with valid structure
             var_file.write_text(
                 f"# Variable configuration for {safe_name}\n"
-                f"# Format:\n"
-                f"# variable_name:\n"
-                f"#   type: file|value\n"
-                f"#   path: path/to/file.txt  (for type: file)\n"
-                f"#   value: \"text value\"     (for type: value)\n"
-                f"#   description: \"Description of variable\"\n",
+                f"description: \"Prompt for {safe_name}\"\n"
+                f"variables: {{}}\n"
+                f"  # Add your variables here. Example:\n"
+                f"  # variable_name:\n"
+                f"  #   type: file  # or 'value'\n"
+                f"  #   path: path/to/file.txt  # for type: file\n"
+                f"  #   # OR\n"
+                f"  #   value: \"text content\"  # for type: value\n"
+                f"  #   description: \"Variable description\"\n",
                 encoding='utf-8'
             )
 
         # Trigger re-discovery
-        workspace.discover_prompts()
+        prompt_sets = workspace.discover_prompts()
+        nav_list = format_prompts_list_nav(prompt_sets)
 
         return (
             f"✅ Created new prompt: {created_files}\n"
             f"📝 Variable file: {safe_name}{vars_ext}",
-            get_prompt_names()
+            get_prompt_names(),
+            nav_list
         )
 
     except Exception as e:
-        return f"❌ Error creating prompt: {str(e)}", get_prompt_names()
+        return f"❌ Error creating prompt: {str(e)}", get_prompt_names(), "*No prompts*"
 
 
 def get_workspace_header() -> str:
@@ -804,6 +809,14 @@ def create_ui():
                         if user_vars:
                             user_vars_md = "**Variables:** " + ", ".join([f"`{{{v}}}`" for v in user_vars])
 
+                    # Handle single-file prompts (role="prompt")
+                    if 'prompt' in prompt_set.prompts:
+                        user_file = f"📄 `{prompt_set.prompts['prompt'].path.name}`"
+                        # Extract variables from prompt content
+                        user_vars = extract_variables_from_prompt(user_content)
+                        if user_vars:
+                            user_vars_md = "**Variables:** " + ", ".join([f"`{{{v}}}`" for v in user_vars])
+
             return (
                 system_file, system_content, system_vars_md,
                 user_file, user_content, user_vars_md,
@@ -899,10 +912,11 @@ def create_ui():
 
         def handle_create_new_prompt(name, ptype):
             """Create a new prompt and update UI."""
-            status, prompt_choices = create_new_prompt(name, ptype)
+            status, prompt_choices, nav_list = create_new_prompt(name, ptype)
             return (
                 status,
                 gr.update(choices=prompt_choices),
+                nav_list,  # Update left navigation
                 gr.update(visible=False, open=False),  # Hide create dialog
                 ""  # Clear name field
             )
@@ -910,7 +924,7 @@ def create_ui():
         create_confirm_btn.click(
             fn=handle_create_new_prompt,
             inputs=[new_prompt_name, new_prompt_type],
-            outputs=[prompt_status, prompt_selector, create_prompt_accordion, new_prompt_name]
+            outputs=[prompt_status, prompt_selector, prompts_nav, create_prompt_accordion, new_prompt_name]
         )
 
     return app

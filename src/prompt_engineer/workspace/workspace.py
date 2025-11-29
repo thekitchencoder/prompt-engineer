@@ -237,6 +237,10 @@ class Workspace:
         except Exception as e:
             raise WorkspaceError(f"Error loading variable file {var_file_path}: {e}")
 
+        # Handle empty or invalid YAML (None or not a dict)
+        if not isinstance(var_config, dict):
+            var_config = {}
+
         # Create template
         template = Template(
             name=name,
@@ -246,7 +250,12 @@ class Workspace:
         # Add prompts
         for role, prompt_file in prompt_set.prompts.items():
             try:
-                prompt_role = PromptRole(role)
+                # Map "prompt" role (single-file prompts) to USER role
+                if role == "prompt":
+                    prompt_role = PromptRole.USER
+                else:
+                    prompt_role = PromptRole(role)
+
                 prompt = Prompt(
                     role=prompt_role,
                     file_path=str(prompt_file.path.relative_to(self.root_path)),

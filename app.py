@@ -294,10 +294,14 @@ def get_prompt_names() -> List[str]:
     if not workspace:
         return []
 
-    prompt_sets = workspace.discover_prompts()
-    # Filter out orphaned prompts for the dropdown
-    matched = [ps.name for ps in prompt_sets if not ps.is_orphaned]
-    return matched
+    try:
+        prompt_sets = workspace.discover_prompts()
+        # Filter out orphaned prompts for the dropdown
+        matched = [ps.name for ps in prompt_sets if not ps.is_orphaned]
+        return matched
+    except Exception:
+        # Return empty list if discovery fails
+        return []
 
 
 def save_prompt_file(prompt_name: str, role: str, content: str) -> str:
@@ -473,20 +477,42 @@ def create_new_prompt(prompt_name: str, prompt_type: str) -> Tuple[str, List[str
         return f"❌ Error creating prompt: {str(e)}", get_prompt_names(), "*No prompts*"
 
 
+def initialize_workspace() -> Tuple[str, Workspace]:
+    """
+    Auto-initialize workspace for current directory.
+
+    Returns:
+        Tuple of (status_message, workspace)
+    """
+    current_dir = Path.cwd()
+
+    try:
+        # Try to open existing workspace
+        workspace = workspace_manager.open_workspace(current_dir)
+        # Verify workspace is valid by accessing config
+        _ = workspace.config
+        return f"✅ Loaded workspace from {current_dir.name}", workspace
+    except (WorkspaceError, Exception):
+        # No workspace exists or invalid, create one
+        workspace = workspace_manager.create_workspace(
+            root_path=current_dir,
+            name=current_dir.name,
+            preset=None  # Auto-detect
+        )
+        return f"✅ Initialized workspace in {current_dir.name}", workspace
+
+
 def get_workspace_header() -> str:
     """Get workspace header info for display."""
     workspace = workspace_manager.get_current_workspace()
     if not workspace:
-        return "## No Workspace Open\n\nOpen or create a workspace to get started."
+        return "*Initializing workspace...*"
 
-    config = workspace.config
-    header = f"## 📁 {config.name}\n\n"
-    header += f"**Root:** `{workspace.root_path.name}`\n\n"
-
-    # TODO: Add git branch/status when implemented
-    # header += f"**Branch:** `main` ●2\n\n"
-
-    return header
+    try:
+        config = workspace.config
+        return f"**{config.name}** | `{workspace.root_path.name}`"
+    except:
+        return "*Initializing workspace...*"
 
 
 def format_prompts_list_nav(prompt_sets: List[PromptSet]) -> str:
@@ -513,421 +539,275 @@ def format_prompts_list_nav(prompt_sets: List[PromptSet]) -> str:
 # ============================================================================
 
 def create_ui():
-    """Create the Gradio UI with modern left-nav layout."""
+    """Create the Gradio UI with icon-based navigation."""
 
     with gr.Blocks(title="Prompt Engineer") as app:
 
-        # State to track current workspace/prompt
-        current_prompt = gr.State("")
-
         # ================================================================
-        # Main Layout: Left Navigation + Main Workspace
+        # Main Layout: Icon Nav + Content Area
         # ================================================================
         with gr.Row():
             # ================================================================
-            # LEFT NAVIGATION PANEL
+            # LEFT ICON NAVIGATION (minimal)
+            # ================================================================
+            with gr.Column(scale=0, min_width=60):
+                gr.Markdown("### 🛠️")
+
+                # Navigation buttons (icon-only style)
+                prompts_nav_btn = gr.Button("📝", size="lg", variant="primary")
+                llm_nav_btn = gr.Button("🤖", size="lg")
+                settings_nav_btn = gr.Button("⚙️", size="lg")
+
+            # ================================================================
+            # MAIN CONTENT AREA
             # ================================================================
             with gr.Column(scale=1):
 
-                # Workspace Header
-                workspace_header = gr.Markdown(
-                    "## No Workspace Open\n\nClick 'Open Workspace' below"
-                )
-
-                # Open Workspace Button
-                open_workspace_btn = gr.Button("📂 Open Workspace", size="sm", variant="primary")
-
-                gr.Markdown("---")
-
-                # Prompts Section
-                gr.Markdown("### 📝 Prompts")
-                prompts_nav = gr.Markdown("*No prompts*")
-
-                gr.Markdown("---")
-
-                # Chains Section (Placeholder)
-                gr.Markdown("### 🔗 Chains")
-                gr.Markdown("*Coming soon*")
-
-                gr.Markdown("---")
-
-                # History Section (Placeholder)
-                gr.Markdown("### 📊 History")
-                gr.Markdown("*Coming soon*")
-
-                gr.Markdown("---")
-
-                # Settings Button
-                settings_btn = gr.Button("⚙️ Settings", size="sm")
-
-            # ================================================================
-            # MAIN WORKSPACE AREA
-            # ================================================================
-            with gr.Column(scale=3):
-
-                # Top Bar with Workspace Info
+                # Top Bar
                 with gr.Row():
-                    gr.Markdown("# 🛠️ Prompt Engineer")
-                    workspace_info_header = gr.Markdown("*No workspace open*")
+                    workspace_info = gr.Markdown(get_workspace_header())
 
-                gr.Markdown("---")
+                # ============================================================
+                # VIEW 1: PROMPT/VARIABLE EDITOR
+                # ============================================================
+                with gr.Column(visible=True) as prompts_view:
+                    gr.Markdown("## 📝 Prompt & Variable Editor")
 
-                # Main Content Tabs
-                with gr.Tabs() as main_tabs:
-
-                    # ============================================================
-                    # Workspace Setup Tab (shown when no workspace is open)
-                    # ============================================================
-                    with gr.Tab("📁 Workspace Setup", id="workspace_setup"):
-                        gr.Markdown("## Open or Create a Workspace")
-                        gr.Markdown(
-                            "Point to your application's root directory. "
-                            "Prompt Engineer will auto-detect the project type and discover prompts."
+                    # Prompt Selection
+                    with gr.Row():
+                        prompt_selector = gr.Dropdown(
+                            label="Select Prompt",
+                            choices=get_prompt_names(),
+                            interactive=True,
+                            scale=3
                         )
+                        create_new_btn = gr.Button("➕ New", size="sm", scale=1)
 
-                        with gr.Row():
-                            workspace_path = gr.Textbox(
-                                label="Workspace Directory",
-                                placeholder="/path/to/your/app",
-                                value=str(Path.cwd()),
-                                info="Root directory of your application",
-                                scale=3
+                    # Role and File Management
+                    with gr.Row():
+                        with gr.Column(scale=1):
+                            prompt_role_selector = gr.Radio(
+                                label="Role",
+                                choices=["system", "user", "assistant"],
+                                value="user"
                             )
-                            detect_btn = gr.Button("🔍 Detect", size="sm", scale=1)
+                        with gr.Column(scale=2):
+                            prompt_file_info = gr.Markdown("*No file selected*")
 
-                        # Auto-detection results
-                        with gr.Row():
-                            detected_type = gr.Textbox(
-                                label="Detected Type",
-                                interactive=False,
-                                scale=1
-                            )
-                            suggested_prompt_dir = gr.Textbox(
-                                label="Prompt Directory",
-                                interactive=False,
-                                scale=1
-                            )
-                            suggested_vars_dir = gr.Textbox(
-                                label="Variables Directory",
-                                interactive=False,
-                                scale=1
-                            )
-
-                        # Workspace creation/opening
-                        with gr.Row():
-                            workspace_name = gr.Textbox(
-                                label="Workspace Name",
-                                placeholder="My Application Prompts",
-                                scale=2
-                            )
-                            preset_choice = gr.Dropdown(
-                                label="Preset",
-                                choices=["Auto-detect", "SpringBoot", "Python", "Node.js", "Custom"],
-                                value="Auto-detect",
-                                scale=1
-                            )
-
-                        with gr.Row():
-                            create_workspace_btn = gr.Button("➕ Create New Workspace", variant="primary")
-                            open_existing_btn = gr.Button("📂 Open Existing Workspace", variant="secondary")
-
-                        workspace_status = gr.Textbox(
-                            label="Status",
-                            interactive=False,
-                            lines=4
-                        )
-
-                    # ============================================================
-                    # Prompt Editor Tab
-                    # ============================================================
-                    with gr.Tab("📝 Prompt Editor", id="prompt_editor"):
-
-                        # Prompt Selection and Creation
-                        with gr.Row():
-                            prompt_selector = gr.Dropdown(
-                                label="Select Prompt",
-                                choices=[],
-                                interactive=True,
-                                scale=3
-                            )
-                            load_prompt_btn = gr.Button("🔄 Load", scale=1)
-                            create_new_btn = gr.Button("➕ New", size="sm", variant="secondary", scale=1)
-
-                        # Create New Prompt Dialog (collapsed by default)
-                        with gr.Accordion("Create New Prompt", open=False, visible=False) as create_prompt_accordion:
-                            with gr.Row():
-                                new_prompt_name = gr.Textbox(
-                                    label="Prompt Name",
-                                    placeholder="e.g., code_review, data_analysis",
-                                    scale=2
-                                )
-                                new_prompt_type = gr.Radio(
-                                    label="Type",
-                                    choices=["single", "multi-role"],
-                                    value="multi-role",
-                                    info="Single=one file, Multi-role=system+user files",
-                                    scale=1
-                                )
-
-                            create_confirm_btn = gr.Button("✅ Create Prompt", variant="primary")
-
-                        prompt_status = gr.Textbox(
-                            label="Status",
-                            interactive=False,
-                            lines=1,
-                            show_label=False
-                        )
-
-                        # System Prompt Section
-                        with gr.Accordion("System Prompt", open=True):
-                            with gr.Row():
-                                system_file_header = gr.Markdown("*No file loaded*")
-
-                            system_prompt_display = gr.Textbox(
+                    # Tabbed Editor (Prompt + Variables)
+                    with gr.Tabs():
+                        with gr.Tab("Prompt"):
+                            prompt_editor = gr.Textbox(
                                 label="",
-                                placeholder="System prompt content...",
-                                lines=10,
-                                max_lines=20,
+                                placeholder="Enter prompt content...",
+                                lines=15,
+                                max_lines=25,
                                 interactive=True,
                                 show_label=False
                             )
-
                             with gr.Row():
-                                save_system_btn = gr.Button("💾 Save System Prompt", size="sm", variant="primary")
-                                system_vars_display = gr.Markdown("*No variables detected*")
+                                with gr.Column(scale=1):
+                                    save_prompt_btn = gr.Button("💾 Save", variant="primary")
+                                with gr.Column(scale=3):
+                                    prompt_vars_display = gr.Markdown("*No variables detected*")
 
-                        # User Prompt Section
-                        with gr.Accordion("User Prompt", open=True):
-                            with gr.Row():
-                                user_file_header = gr.Markdown("*No file loaded*")
+                        with gr.Tab("Variables"):
+                            variables_editor = gr.Textbox(
+                                label="Variable Configuration (YAML)",
+                                placeholder="# Define variables here\nvariables:\n  var_name:\n    type: value\n    value: \"content\"",
+                                lines=15,
+                                max_lines=25,
+                                interactive=True
+                            )
+                            save_vars_btn = gr.Button("💾 Save Variables", variant="primary")
 
-                            user_prompt_display = gr.Textbox(
+                    editor_status = gr.Textbox(label="Status", interactive=False, lines=1, show_label=False)
+
+                # ============================================================
+                # VIEW 2: LLM COMPOSITION & TESTING
+                # ============================================================
+                with gr.Column(visible=False) as llm_view:
+                    gr.Markdown("## 🤖 LLM Testing")
+
+                    # Model Selection
+                    with gr.Row():
+                        model_dropdown = gr.Dropdown(
+                            label="Model",
+                            choices=["gpt-4", "gpt-3.5-turbo", "claude-3-opus"],
+                            value="gpt-4",
+                            scale=2
+                        )
+                        temperature_slider = gr.Slider(
+                            label="Temperature",
+                            minimum=0,
+                            maximum=2,
+                            value=0.7,
+                            step=0.1,
+                            scale=1
+                        )
+
+                    # Prompt Composition
+                    gr.Markdown("### Compose Prompt")
+                    with gr.Row():
+                        system_prompt_selector = gr.Dropdown(
+                            label="System Prompt",
+                            choices=get_prompt_names(),
+                            allow_custom_value=True
+                        )
+                        user_prompt_selector = gr.Dropdown(
+                            label="User Prompt",
+                            choices=get_prompt_names(),
+                            allow_custom_value=True
+                        )
+
+                    # Raw View & Send
+                    with gr.Tabs():
+                        with gr.Tab("Raw Request"):
+                            raw_request_display = gr.Code(
                                 label="",
-                                placeholder="User prompt content...",
-                                lines=10,
-                                max_lines=20,
-                                interactive=True,
-                                show_label=False
+                                language="json",
+                                lines=10
                             )
 
-                            with gr.Row():
-                                save_user_btn = gr.Button("💾 Save User Prompt", size="sm", variant="primary")
-                                user_vars_display = gr.Markdown("*No variables detected*")
+                        with gr.Tab("Response"):
+                            llm_response_display = gr.Markdown("*No response yet*")
 
-                        # Variables Section
-                        with gr.Accordion("Variables", open=True):
-                            variables_display = gr.Markdown("*No variables*")
+                        with gr.Tab("Raw Response"):
+                            raw_response_display = gr.Code(
+                                label="",
+                                language="json",
+                                lines=10
+                            )
 
-                        # Response Section (Placeholder for Task 1.2.6)
-                        with gr.Accordion("Response", open=False):
-                            gr.Markdown("*Response display coming soon*")
-                            gr.Markdown("This will show: Formatted | Raw Request | Raw Response tabs")
+                    send_to_llm_btn = gr.Button("🚀 Send to LLM", variant="primary", size="lg")
+                    llm_status = gr.Textbox(label="Status", interactive=False, lines=1, show_label=False)
 
-                    # ============================================================
-                    # Settings Tab
-                    # ============================================================
-                    with gr.Tab("⚙️ Settings", id="settings"):
-                        gr.Markdown("## Workspace Configuration")
-                        workspace_config_display = gr.Markdown("*Open a workspace to view configuration*")
+                # ============================================================
+                # VIEW 3: SETTINGS
+                # ============================================================
+                with gr.Column(visible=False) as settings_view:
+                    gr.Markdown("## ⚙️ Settings")
 
-                        gr.Markdown("---")
+                    with gr.Accordion("Workspace Configuration", open=True):
+                        workspace_config_display = gr.Code(
+                            label="workspace.yaml",
+                            language="yaml",
+                            lines=15
+                        )
 
-                        gr.Markdown("## Provider Settings")
-                        gr.Markdown("*Coming soon: Provider configuration, model settings, etc.*")
+                    with gr.Accordion("Provider Configuration", open=False):
+                        gr.Markdown("*Provider settings coming soon*")
 
         # ================================================================
         # Event Handlers
         # ================================================================
 
-        # Detect project type
-        detect_btn.click(
-            fn=detect_project_info,
-            inputs=[workspace_path],
-            outputs=[detected_type, suggested_prompt_dir, suggested_vars_dir]
+        # Navigation
+        def show_prompts_view():
+            return gr.update(visible=True), gr.update(visible=False), gr.update(visible=False)
+
+        def show_llm_view():
+            return gr.update(visible=False), gr.update(visible=True), gr.update(visible=False)
+
+        def show_settings_view():
+            return gr.update(visible=False), gr.update(visible=False), gr.update(visible=True)
+
+        prompts_nav_btn.click(
+            fn=show_prompts_view,
+            outputs=[prompts_view, llm_view, settings_view]
         )
 
-        # Create workspace
-        def handle_create_workspace(path, name, preset):
-            status, header, nav_list, prompt_choices, config_info = create_workspace(path, name, preset)
-            return status, header, nav_list, gr.update(choices=prompt_choices), config_info
-
-        create_workspace_btn.click(
-            fn=handle_create_workspace,
-            inputs=[workspace_path, workspace_name, preset_choice],
-            outputs=[workspace_status, workspace_header, prompts_nav, prompt_selector, workspace_config_display]
+        llm_nav_btn.click(
+            fn=show_llm_view,
+            outputs=[prompts_view, llm_view, settings_view]
         )
 
-        # Open existing workspace
-        def handle_open_workspace(path):
-            status, header, nav_list, prompt_choices, config_info = open_workspace(path)
-            return status, header, nav_list, gr.update(choices=prompt_choices), config_info
-
-        open_existing_btn.click(
-            fn=handle_open_workspace,
-            inputs=[workspace_path],
-            outputs=[workspace_status, workspace_header, prompts_nav, prompt_selector, workspace_config_display]
+        settings_nav_btn.click(
+            fn=show_settings_view,
+            outputs=[prompts_view, llm_view, settings_view]
         )
 
-        # Open workspace from left nav button
-        open_workspace_btn.click(
-            fn=lambda: gr.update(selected="workspace_setup"),
-            outputs=[main_tabs]
-        )
-
-        # Settings button
-        settings_btn.click(
-            fn=lambda: gr.update(selected="settings"),
-            outputs=[main_tabs]
-        )
-
-        # Helper function to load and display prompt with file headers
-        def load_and_display_prompt(prompt_name):
-            """Load prompt and return with file headers and extracted variables."""
-            system_content, user_content, vars_info, status = load_prompt_set(prompt_name)
+        # Prompt Editor
+        def load_prompt_for_editing(prompt_name):
+            """Load a prompt for editing."""
+            if not prompt_name:
+                return "", "*No file selected*", "*No variables*", ""
 
             workspace = workspace_manager.get_current_workspace()
-            system_file = "*No file*"
-            user_file = "*No file*"
-            system_vars_md = "*No variables detected*"
-            user_vars_md = "*No variables detected*"
+            if not workspace:
+                return "", "*No workspace*", "*No variables*", "❌ No workspace"
 
-            if workspace and prompt_name:
+            try:
                 prompt_set = workspace.get_prompt_set(prompt_name)
-                if prompt_set:
-                    # Get file names for headers
-                    if 'system' in prompt_set.prompts:
-                        system_file = f"📄 `{prompt_set.prompts['system'].path.name}`"
-                        # Extract variables from system prompt
-                        system_vars = extract_variables_from_prompt(system_content)
-                        if system_vars:
-                            system_vars_md = "**Variables:** " + ", ".join([f"`{{{v}}}`" for v in system_vars])
+                if not prompt_set:
+                    return "", "*Not found*", "*No variables*", f"❌ Prompt '{prompt_name}' not found"
 
-                    if 'user' in prompt_set.prompts:
-                        user_file = f"📄 `{prompt_set.prompts['user'].path.name}`"
-                        # Extract variables from user prompt
-                        user_vars = extract_variables_from_prompt(user_content)
-                        if user_vars:
-                            user_vars_md = "**Variables:** " + ", ".join([f"`{{{v}}}`" for v in user_vars])
+                # Load first available prompt (single-file or first role)
+                content = ""
+                file_name = ""
 
-                    # Handle single-file prompts (role="prompt")
-                    if 'prompt' in prompt_set.prompts:
-                        user_file = f"📄 `{prompt_set.prompts['prompt'].path.name}`"
-                        # Extract variables from prompt content
-                        user_vars = extract_variables_from_prompt(user_content)
-                        if user_vars:
-                            user_vars_md = "**Variables:** " + ", ".join([f"`{{{v}}}`" for v in user_vars])
+                if 'prompt' in prompt_set.prompts:
+                    prompt_file = prompt_set.prompts['prompt']
+                    file_name = prompt_file.path.name
+                elif 'user' in prompt_set.prompts:
+                    prompt_file = prompt_set.prompts['user']
+                    file_name = prompt_file.path.name
+                elif 'system' in prompt_set.prompts:
+                    prompt_file = prompt_set.prompts['system']
+                    file_name = prompt_file.path.name
+                else:
+                    # Get first available
+                    prompt_file = list(prompt_set.prompts.values())[0]
+                    file_name = prompt_file.path.name
 
-            return (
-                system_file, system_content, system_vars_md,
-                user_file, user_content, user_vars_md,
-                vars_info, status
-            )
+                with open(prompt_file.path, 'r', encoding='utf-8') as f:
+                    content = f.read()
 
-        # Load prompt
-        load_prompt_btn.click(
-            fn=load_and_display_prompt,
+                # Extract variables
+                vars_list = extract_variables_from_prompt(content)
+                vars_md = "*No variables detected*"
+                if vars_list:
+                    vars_md = "**Variables:** " + ", ".join([f"`{{{v}}}`" for v in vars_list])
+
+                file_info = f"📄 `{file_name}`"
+
+                return content, file_info, vars_md, f"✅ Loaded {prompt_name}"
+
+            except Exception as e:
+                return "", "*Error*", "*No variables*", f"❌ Error: {str(e)}"
+
+        prompt_selector.change(
+            fn=load_prompt_for_editing,
             inputs=[prompt_selector],
-            outputs=[
-                system_file_header,
-                system_prompt_display,
-                system_vars_display,
-                user_file_header,
-                user_prompt_display,
-                user_vars_display,
-                variables_display,
-                prompt_status
-            ]
+            outputs=[prompt_editor, prompt_file_info, prompt_vars_display, editor_status]
         )
 
-        # Save system prompt
-        def save_system_prompt(prompt_name, content):
-            """Save system prompt to file."""
-            status = save_prompt_file(prompt_name, "system", content)
-            # Re-extract variables after save
-            vars_list = extract_variables_from_prompt(content)
-            vars_md = "*No variables detected*"
-            if vars_list:
-                vars_md = "**Variables:** " + ", ".join([f"`{{{v}}}`" for v in vars_list])
-            return status, vars_md
+        # Save prompt (simplified - saves to currently selected file)
+        def save_current_prompt(prompt_name, content):
+            """Save the current prompt content."""
+            return save_prompt_file(prompt_name, "user", content)  # Default to user for now
 
-        save_system_btn.click(
-            fn=save_system_prompt,
-            inputs=[prompt_selector, system_prompt_display],
-            outputs=[prompt_status, system_vars_display]
+        save_prompt_btn.click(
+            fn=save_current_prompt,
+            inputs=[prompt_selector, prompt_editor],
+            outputs=[editor_status]
         )
 
-        # Save user prompt
-        def save_user_prompt(prompt_name, content):
-            """Save user prompt to file."""
-            status = save_prompt_file(prompt_name, "user", content)
-            # Re-extract variables after save
-            vars_list = extract_variables_from_prompt(content)
-            vars_md = "*No variables detected*"
-            if vars_list:
-                vars_md = "**Variables:** " + ", ".join([f"`{{{v}}}`" for v in vars_list])
-            return status, vars_md
-
-        save_user_btn.click(
-            fn=save_user_prompt,
-            inputs=[prompt_selector, user_prompt_display],
-            outputs=[prompt_status, user_vars_display]
-        )
-
-        # Live variable extraction as user types (debounced)
-        def update_system_vars(content):
-            """Update variable display as system prompt is edited."""
+        # Live variable extraction
+        def update_vars_display(content):
             vars_list = extract_variables_from_prompt(content)
             if vars_list:
                 return "**Variables:** " + ", ".join([f"`{{{v}}}`" for v in vars_list])
             return "*No variables detected*"
 
-        system_prompt_display.change(
-            fn=update_system_vars,
-            inputs=[system_prompt_display],
-            outputs=[system_vars_display]
-        )
-
-        def update_user_vars(content):
-            """Update variable display as user prompt is edited."""
-            vars_list = extract_variables_from_prompt(content)
-            if vars_list:
-                return "**Variables:** " + ", ".join([f"`{{{v}}}`" for v in vars_list])
-            return "*No variables detected*"
-
-        user_prompt_display.change(
-            fn=update_user_vars,
-            inputs=[user_prompt_display],
-            outputs=[user_vars_display]
-        )
-
-        # Create New Prompt functionality
-        def toggle_create_dialog():
-            """Toggle the create new prompt dialog."""
-            return gr.update(visible=True, open=True)
-
-        create_new_btn.click(
-            fn=toggle_create_dialog,
-            outputs=[create_prompt_accordion]
-        )
-
-        def handle_create_new_prompt(name, ptype):
-            """Create a new prompt and update UI."""
-            status, prompt_choices, nav_list = create_new_prompt(name, ptype)
-            return (
-                status,
-                gr.update(choices=prompt_choices),
-                nav_list,  # Update left navigation
-                gr.update(visible=False, open=False),  # Hide create dialog
-                ""  # Clear name field
-            )
-
-        create_confirm_btn.click(
-            fn=handle_create_new_prompt,
-            inputs=[new_prompt_name, new_prompt_type],
-            outputs=[prompt_status, prompt_selector, prompts_nav, create_prompt_accordion, new_prompt_name]
+        prompt_editor.change(
+            fn=update_vars_display,
+            inputs=[prompt_editor],
+            outputs=[prompt_vars_display]
         )
 
     return app
+
 
 
 # ============================================================================
@@ -937,6 +817,14 @@ def create_ui():
 if __name__ == "__main__":
     # Load environment configuration
     load_env_config()
+
+    # Initialize workspace
+    try:
+        init_status, workspace = initialize_workspace()
+        print(init_status)
+    except Exception as e:
+        print(f"⚠️ Warning: {str(e)}")
+        print("⚠️ Continuing without workspace...")
 
     # Create and launch UI
     app = create_ui()

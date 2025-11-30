@@ -603,32 +603,28 @@ def create_ui():
                         # File Info
                         prompt_file_info = gr.Markdown("*No file selected*")
 
-                        # Tabbed Editor (Prompt + Variables)
-                        with gr.Tabs():
-                            with gr.Tab("Prompt"):
-                                prompt_editor = gr.Textbox(
-                                    label="",
-                                    placeholder="Enter prompt content...",
-                                    lines=15,
-                                    max_lines=25,
-                                    interactive=True,
-                                    show_label=False
-                                )
-                                with gr.Row():
-                                    with gr.Column(scale=1):
-                                        save_prompt_btn = gr.Button("💾 Save", variant="primary")
-                                    with gr.Column(scale=3):
-                                        prompt_vars_display = gr.Markdown("*No variables detected*")
+                        # Prompt Editor
+                        prompt_editor = gr.Textbox(
+                            label="",
+                            placeholder="Enter prompt content...",
+                            lines=15,
+                            max_lines=25,
+                            interactive=True,
+                            show_label=False
+                        )
 
-                            with gr.Tab("Variables"):
-                                variables_editor = gr.Textbox(
-                                    label="Variable Configuration (YAML)",
-                                    placeholder="# Define variables here\nvariables:\n  var_name:\n    type: value\n    value: \"content\"",
-                                    lines=15,
-                                    max_lines=25,
-                                    interactive=True
-                                )
-                                save_vars_btn = gr.Button("💾 Save Variables", variant="primary")
+                        with gr.Row():
+                            with gr.Column(scale=1):
+                                save_prompt_btn = gr.Button("💾 Save", variant="primary")
+                            with gr.Column(scale=3):
+                                prompt_vars_display = gr.Markdown("*No variables detected*")
+
+                        # Workspace Variables Info (read-only)
+                        with gr.Accordion("📦 Workspace Variables", open=False):
+                            workspace_vars_display = gr.Markdown(
+                                "*Variables are defined in workspace.yaml*\n\nEdit workspace.yaml to add or modify variables.",
+                                elem_id="workspace-vars-info"
+                            )
 
                         editor_status = gr.Textbox(
                             label="Status",
@@ -641,7 +637,6 @@ def create_ui():
 
                         # Hidden state to track unsaved changes
                         original_prompt_content = gr.State("")
-                        original_vars_content = gr.State("")
 
                     # ============================================================
                     # VIEW 2: LLM COMPOSITION & TESTING
@@ -766,29 +761,20 @@ def create_ui():
         def load_prompt_for_editing(prompt_name):
             """Load a prompt for editing."""
             if not prompt_name:
-                return "", "*No file selected*", "*No variables*", "", "", "", ""
+                return "", "*No file selected*", "*No variables*", "*No workspace variables*", "", ""
 
             workspace = workspace_manager.get_current_workspace()
             if not workspace:
-                return "", "*No workspace*", "*No variables*", "", "", "", ""
+                return "", "*No workspace*", "*No variables*", "*No workspace variables*", "", ""
 
             try:
                 prompt_set = workspace.get_prompt_set(prompt_name)
                 if not prompt_set:
-                    return "", "*Not found*", "*No variables*", "", f"❌ Prompt '{prompt_name}' not found", "", ""
-
-                # Load variables if available
-                var_content = ""
-                if prompt_set.var_file:
-                    try:
-                        with open(prompt_set.var_file.path, 'r', encoding='utf-8') as f:
-                            var_content = f.read()
-                    except:
-                        var_content = ""
+                    return "", "*Not found*", "*No variables*", "*No workspace variables*", f"❌ Prompt '{prompt_name}' not found", ""
 
                 # Get the first available prompt file
                 if not prompt_set.prompts:
-                    return "", "*No prompt files*", "*No variables*", var_content, f"❌ No prompt files for '{prompt_name}'", "", var_content
+                    return "", "*No prompt files*", "*No variables*", "*No workspace variables*", f"❌ No prompt files for '{prompt_name}'", ""
 
                 # Load the first prompt file (or 'prompt' if it exists)
                 prompt_file = None
@@ -802,31 +788,52 @@ def create_ui():
                 with open(prompt_file.path, 'r', encoding='utf-8') as f:
                     content = f.read()
 
-                # Extract variables
+                # Extract variables from prompt
                 vars_list = extract_variables_from_prompt(content)
+
+                # Get workspace variables
+                workspace_vars = workspace.config.variables if workspace.config else {}
+
+                # Build variable display
                 vars_md = "*No variables detected*"
+                workspace_vars_md = "*No variables defined in workspace.yaml*"
+
                 if vars_list:
-                    vars_md = "**Variables:** " + ", ".join([f"`{{{v}}}`" for v in vars_list])
+                    # Check which variables are defined vs undefined
+                    defined_vars = [v for v in vars_list if v in workspace_vars]
+                    undefined_vars = [v for v in vars_list if v not in workspace_vars]
+
+                    parts = []
+                    if defined_vars:
+                        parts.append("**Defined:** " + ", ".join([f"`{{{v}}}`" for v in defined_vars]))
+                    if undefined_vars:
+                        parts.append("**⚠️ Undefined:** " + ", ".join([f"`{{{v}}}`" for v in undefined_vars]))
+                    vars_md = " | ".join(parts)
+
+                if workspace_vars:
+                    var_lines = []
+                    for var_name, var_config in workspace_vars.items():
+                        if var_config.type == "file":
+                            var_lines.append(f"- `{{{var_name}}}` → file: `{var_config.path}`")
+                        else:
+                            preview = var_config.value[:50] + "..." if len(var_config.value) > 50 else var_config.value
+                            var_lines.append(f"- `{{{var_name}}}` → value: `{preview}`")
+                    workspace_vars_md = "\n".join(var_lines)
 
                 file_info = f"📄 `{file_name}`"
 
-                return content, file_info, vars_md, var_content, f"✅ Loaded {prompt_name}", content, var_content
+                return content, file_info, vars_md, workspace_vars_md, f"✅ Loaded {prompt_name}", content
 
             except Exception as e:
-                return "", "*Error*", "*No variables*", "", f"❌ Error: {str(e)}", "", ""
+                return "", "*Error*", "*No variables*", "*No workspace variables*", f"❌ Error: {str(e)}", ""
 
         # Check for unsaved changes
-        def check_dirty_state(current_prompt, original_prompt, current_vars, original_vars):
+        def check_dirty_state(current_prompt, original_prompt):
             """Check if there are unsaved changes and update status."""
             prompt_changed = current_prompt != original_prompt
-            vars_changed = current_vars != original_vars
 
-            if prompt_changed and vars_changed:
-                return "⚠️ Prompt and Variables have unsaved changes"
-            elif prompt_changed:
+            if prompt_changed:
                 return "⚠️ Prompt has unsaved changes"
-            elif vars_changed:
-                return "⚠️ Variables have unsaved changes"
             else:
                 return ""
 
@@ -834,7 +841,7 @@ def create_ui():
         prompt_selector.change(
             fn=load_prompt_for_editing,
             inputs=[prompt_selector],
-            outputs=[prompt_editor, prompt_file_info, prompt_vars_display, variables_editor, editor_status, original_prompt_content, original_vars_content]
+            outputs=[prompt_editor, prompt_file_info, prompt_vars_display, workspace_vars_display, editor_status, original_prompt_content]
         )
 
         # Save prompt
@@ -874,74 +881,38 @@ def create_ui():
             outputs=[editor_status, original_prompt_content]
         )
 
-        # Save variables YAML file
-        def save_variables_file(prompt_name, var_content):
-            """Save the variables YAML file."""
-            workspace = workspace_manager.get_current_workspace()
-            if not workspace:
-                return "❌ No workspace open", var_content
-
-            if not prompt_name:
-                return "❌ No prompt selected", var_content
-
-            try:
-                prompt_set = workspace.get_prompt_set(prompt_name)
-                if not prompt_set:
-                    return f"❌ Prompt set '{prompt_name}' not found", var_content
-
-                # Get or create variable file path
-                if prompt_set.var_file:
-                    var_file_path = prompt_set.var_file.path
-                else:
-                    # Create new variable file
-                    config = workspace.config
-                    vars_dir = workspace.root_path / config.layout.vars_dir
-                    vars_dir.mkdir(parents=True, exist_ok=True)
-                    vars_ext = config.layout.vars_extension
-                    var_file_path = vars_dir / f"{prompt_name}{vars_ext}"
-
-                # Write content
-                with open(var_file_path, 'w', encoding='utf-8') as f:
-                    f.write(var_content)
-
-                return f"✅ Saved variables to {var_file_path.name}", var_content
-
-            except Exception as e:
-                return f"❌ Error saving variables: {str(e)}", var_content
-
-        save_vars_btn.click(
-            fn=save_variables_file,
-            inputs=[prompt_selector, variables_editor],
-            outputs=[editor_status, original_vars_content]
-        )
-
         # Combined function for prompt editor changes
-        def on_prompt_change(content, original_prompt, current_vars, original_vars):
+        def on_prompt_change(content, original_prompt):
             """Update variable display and check dirty state."""
+            workspace = workspace_manager.get_current_workspace()
+            workspace_vars = workspace.config.variables if (workspace and workspace.config) else {}
+
             # Extract variables
             vars_list = extract_variables_from_prompt(content)
+
+            vars_md = "*No variables detected*"
             if vars_list:
-                vars_md = "**Variables:** " + ", ".join([f"`{{{v}}}`" for v in vars_list])
-            else:
-                vars_md = "*No variables detected*"
+                # Check which variables are defined vs undefined
+                defined_vars = [v for v in vars_list if v in workspace_vars]
+                undefined_vars = [v for v in vars_list if v not in workspace_vars]
+
+                parts = []
+                if defined_vars:
+                    parts.append("**Defined:** " + ", ".join([f"`{{{v}}}`" for v in defined_vars]))
+                if undefined_vars:
+                    parts.append("**⚠️ Undefined:** " + ", ".join([f"`{{{v}}}`" for v in undefined_vars]))
+                vars_md = " | ".join(parts)
 
             # Check dirty state
-            status = check_dirty_state(content, original_prompt, current_vars, original_vars)
+            status = check_dirty_state(content, original_prompt)
 
             return vars_md, status
 
         # Track changes in prompt editor
         prompt_editor.change(
             fn=on_prompt_change,
-            inputs=[prompt_editor, original_prompt_content, variables_editor, original_vars_content],
+            inputs=[prompt_editor, original_prompt_content],
             outputs=[prompt_vars_display, editor_status]
-        )
-
-        # Track changes in variables editor
-        variables_editor.change(
-            fn=check_dirty_state,
-            inputs=[prompt_editor, original_prompt_content, variables_editor, original_vars_content],
-            outputs=[editor_status]
         )
 
         # Refresh prompts handler
@@ -963,11 +934,11 @@ def create_ui():
                 # Load the first prompt
                 return load_prompt_for_editing(prompt_names[0])
             # Return empty values
-            return "", "*No prompts found*", "*No variables*", "", "", "", ""
+            return "", "*No prompts found*", "*No variables*", "*No workspace variables*", "", ""
 
         app.load(
             fn=on_app_load,
-            outputs=[prompt_editor, prompt_file_info, prompt_vars_display, variables_editor, editor_status, original_prompt_content, original_vars_content]
+            outputs=[prompt_editor, prompt_file_info, prompt_vars_display, workspace_vars_display, editor_status, original_prompt_content]
         )
 
     return app

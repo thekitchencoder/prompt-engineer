@@ -4,10 +4,46 @@ Workspace configuration schema and models.
 Defines the structure of workspace.yaml files using Pydantic for validation.
 """
 
-from typing import Optional, Dict, List, Any
+from typing import Optional, Dict, List, Any, Literal
 from pydantic import BaseModel, Field, field_validator
 from pathlib import Path
 import yaml
+
+
+class VariableConfig(BaseModel):
+    """Configuration for a single variable."""
+
+    type: Literal["file", "value"] = Field(
+        description="Variable type: 'file' to load from file, 'value' for direct value"
+    )
+    path: Optional[str] = Field(
+        default=None,
+        description="Path to file (relative to workspace root) when type='file'"
+    )
+    value: Optional[str] = Field(
+        default=None,
+        description="Direct value when type='value'"
+    )
+    description: Optional[str] = Field(
+        default=None,
+        description="Optional description of the variable"
+    )
+
+    @field_validator("path")
+    @classmethod
+    def validate_path_for_file_type(cls, v, info):
+        """Ensure path is provided when type is 'file'."""
+        if info.data.get("type") == "file" and not v:
+            raise ValueError("'path' is required when type='file'")
+        return v
+
+    @field_validator("value")
+    @classmethod
+    def validate_value_for_value_type(cls, v, info):
+        """Ensure value is provided when type is 'value'."""
+        if info.data.get("type") == "value" and not v:
+            raise ValueError("'value' is required when type='value'")
+        return v
 
 
 class VariableDelimiters(BaseModel):
@@ -173,6 +209,10 @@ class WorkspaceConfig(BaseModel):
         default_factory=WorkspaceSettings,
         description="Workspace settings"
     )
+    variables: Dict[str, VariableConfig] = Field(
+        default_factory=dict,
+        description="Global variables for all prompts"
+    )
     metadata: Dict[str, Any] = Field(
         default_factory=dict,
         description="Additional metadata"
@@ -227,6 +267,51 @@ class WorkspaceConfig(BaseModel):
                 sort_keys=False,
                 allow_unicode=True
             )
+
+    def get_variable_value(self, var_name: str, workspace_root: Path) -> Optional[str]:
+        """
+        Get the resolved value of a variable.
+
+        Args:
+            var_name: Name of the variable
+            workspace_root: Path to workspace root directory
+
+        Returns:
+            Variable value (file contents or direct value), or None if not found
+        """
+        if var_name not in self.variables:
+            return None
+
+        var_config = self.variables[var_name]
+
+        if var_config.type == "file":
+            # Load from file
+            file_path = workspace_root / var_config.path
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    return f.read()
+            except Exception:
+                return None
+        else:
+            # Direct value
+            return var_config.value
+
+    def get_all_variables(self, workspace_root: Path) -> Dict[str, str]:
+        """
+        Get all variables resolved to their values.
+
+        Args:
+            workspace_root: Path to workspace root directory
+
+        Returns:
+            Dictionary of variable names to resolved values
+        """
+        result = {}
+        for var_name in self.variables:
+            value = self.get_variable_value(var_name, workspace_root)
+            if value is not None:
+                result[var_name] = value
+        return result
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert configuration to dictionary."""

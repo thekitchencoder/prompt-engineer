@@ -220,11 +220,14 @@ def refresh_workspace_config() -> tuple:
 # ============================================================================
 
 
-def refresh_prompt_list() -> tuple:
-    """Refresh list of available prompt files."""
+def refresh_prompt_list(prompt_dir: str) -> tuple:
+    """Save prompt directory and refresh list of available prompt files."""
+    # Save the prompt directory to workspace config
     config = load_workspace_config(get_workspace_root())
-    prompt_dir = config.get("paths", {}).get("prompts", "prompts")
+    config["paths"]["prompts"] = prompt_dir
+    save_workspace_config(get_workspace_root(), config)
 
+    # Refresh the file list
     files = list_prompt_files(get_workspace_root(), prompt_dir)
 
     if not files:
@@ -474,15 +477,6 @@ def create_ui():
 
             workspace_prompt_dir, workspace_var_rows, workspace_status_initial = load_workspace_config_ui()
 
-            with gr.Row():
-                prompt_dir_input = gr.Textbox(
-                    label="Prompts Directory",
-                    value=workspace_prompt_dir,
-                    placeholder="prompts",
-                )
-
-            save_workspace_config_btn = gr.Button("💾 Save Workspace Config", size="sm")
-
             gr.Markdown("### Variable Mappings")
 
             with gr.Row():
@@ -521,12 +515,20 @@ def create_ui():
             gr.Markdown("### Edit Prompt Files")
 
             with gr.Row():
+                prompt_dir_input = gr.Textbox(
+                    label="Prompts Directory",
+                    value=workspace_prompt_dir,
+                    placeholder="prompts",
+                    scale=3,
+                )
+                refresh_prompts_btn = gr.Button("🔄 Refresh List", size="sm", scale=1)
+
+            with gr.Row():
                 prompt_file_dropdown = gr.Dropdown(
                     choices=get_available_prompts(),
                     label="Select Prompt File",
                     scale=3,
                 )
-                refresh_prompts_btn = gr.Button("🔄 Refresh", size="sm", scale=1)
                 save_prompt_btn = gr.Button("💾 Save", size="sm", scale=1)
 
             with gr.Tabs():
@@ -635,12 +637,6 @@ def create_ui():
         )
 
         # Section 2: Workspace Config
-        save_workspace_config_btn.click(
-            fn=save_workspace_config_ui,
-            inputs=[prompt_dir_input],
-            outputs=[workspace_config_status],
-        )
-
         add_var_btn.click(
             fn=add_variable_ui,
             inputs=[var_name_input, var_type_radio, var_source_input],
@@ -659,6 +655,7 @@ def create_ui():
         # Section 3: Prompt Editor
         refresh_prompts_btn.click(
             fn=refresh_prompt_list,
+            inputs=[prompt_dir_input],
             outputs=[prompt_file_dropdown, prompt_status],
         )
 

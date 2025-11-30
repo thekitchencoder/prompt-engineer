@@ -475,7 +475,7 @@ def create_ui():
         # Load workspace config for initial values
         workspace_prompt_dir, workspace_var_rows, workspace_status_initial = load_workspace_config_ui()
 
-        with gr.Accordion("✏️ Prompt Editor", open=True) as prompt_editor_section:
+        with gr.Accordion("✏️ Prompt Editor", open=user_config_valid) as prompt_editor_section:
             gr.Markdown("### Edit Prompt Files")
 
             with gr.Row():
@@ -516,7 +516,7 @@ def create_ui():
         # Section 3: Workspace Config
         # ====================================================================
 
-        with gr.Accordion("📁 Workspace Configuration", open=True) as workspace_config_section:
+        with gr.Accordion("📁 Workspace Configuration", open=False) as workspace_config_section:
             gr.Markdown(f"### Workspace Settings (saved to `{get_workspace_root()}/.prompt-engineer/workspace.yaml`)")
 
             gr.Markdown("### Variable Mappings")
@@ -553,7 +553,7 @@ def create_ui():
         # Section 4: LLM Interaction
         # ====================================================================
 
-        with gr.Accordion("🚀 LLM Interaction", open=True) as llm_section:
+        with gr.Accordion("🚀 LLM Interaction", open=False) as llm_section:
             gr.Markdown("### Execute Prompts")
 
             with gr.Row():

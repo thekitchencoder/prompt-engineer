@@ -114,10 +114,8 @@ def get_default_user_config() -> Dict[str, Any]:
 def get_default_workspace_config() -> Dict[str, Any]:
     """Get default workspace configuration."""
     return {
-        "name": "My Workspace",
         "paths": {
             "prompts": "prompts",
-            "data": "prompt-data",
         },
         "variables": {},
         "defaults": {
@@ -158,17 +156,11 @@ def validate_workspace_config(workspace_root: str, config: Dict[str, Any]) -> Li
     # Check paths
     paths = config.get("paths", {})
     prompt_dir = paths.get("prompts")
-    data_dir = paths.get("data")
 
     if not prompt_dir:
         errors.append("Missing prompt directory path")
     elif not (Path(workspace_root) / prompt_dir).exists():
         errors.append(f"Prompt directory not found: {prompt_dir}")
-
-    if not data_dir:
-        errors.append("Missing data directory path")
-    elif not (Path(workspace_root) / data_dir).exists():
-        errors.append(f"Data directory not found: {data_dir}")
 
     # Check variable files
     variables = config.get("variables", {})

@@ -59,9 +59,7 @@ Configure your LLM provider (OpenAI, Ollama, LM Studio, OpenRouter, etc.), API k
 - **Purpose**: Workspace paths and variable mappings
 
 Define:
-- Workspace name
 - Prompt directory (where `.txt` prompt files live)
-- Data directory (where variable data files live)
 - Variable mappings:
   ```yaml
   variables:
@@ -156,11 +154,8 @@ presets:
 ### Workspace Config (`${workspace}/.prompt-engineer/workspace.yaml`)
 
 ```yaml
-name: "My App Prompts"
-
 paths:
   prompts: "prompts"
-  data: "prompt-data"
 
 variables:
   code_to_evaluate:

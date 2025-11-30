@@ -110,8 +110,7 @@ prompt-engineer/
 - Auto-collapses if config exists
 
 **Section 2: Workspace Configuration**
-- Workspace name
-- Paths: prompts directory, data directory
+- Paths: prompts directory
 - Variable mappings (add/edit/remove)
 - Variable table display
 - Save to `${workspace}/.prompt-engineer/workspace.yaml`
@@ -151,10 +150,8 @@ presets:
 
 **Workspace Config** (`${workspace}/.prompt-engineer/workspace.yaml`):
 ```yaml
-name: "My Workspace"
 paths:
   prompts: "prompts"
-  data: "prompt-data"
 variables:
   my_var:
     type: file

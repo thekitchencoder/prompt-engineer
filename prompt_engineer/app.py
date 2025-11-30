@@ -144,10 +144,8 @@ def load_workspace_config_ui() -> tuple:
     """Load workspace config and populate UI."""
     config = load_workspace_config(get_workspace_root())
 
-    name = config.get("name", "My Workspace")
     paths = config.get("paths", {})
     prompt_dir = paths.get("prompts", "prompts")
-    data_dir = paths.get("data", "prompt-data")
 
     # Build variable table data
     variables = config.get("variables", {})
@@ -168,20 +166,16 @@ def load_workspace_config_ui() -> tuple:
     else:
         status = f"✅ Workspace config valid ({len(variables)} variables)"
 
-    return name, prompt_dir, data_dir, var_rows, status
+    return prompt_dir, var_rows, status
 
 
 def save_workspace_config_ui(
-    name: str,
     prompt_dir: str,
-    data_dir: str,
 ) -> str:
     """Save workspace configuration."""
     config = load_workspace_config(get_workspace_root())
 
-    config["name"] = name
     config["paths"]["prompts"] = prompt_dir
-    config["paths"]["data"] = data_dir
 
     # Validate before saving
     errors = validate_workspace_config(get_workspace_root(), config)
@@ -478,25 +472,13 @@ def create_ui():
         with gr.Accordion("📁 Workspace Configuration", open=True) as workspace_config_section:
             gr.Markdown(f"### Workspace Settings (saved to `{get_workspace_root()}/.prompt-engineer/workspace.yaml`)")
 
-            workspace_name, workspace_prompt_dir, workspace_data_dir, workspace_var_rows, workspace_status_initial = load_workspace_config_ui()
-
-            with gr.Row():
-                workspace_name_input = gr.Textbox(
-                    label="Workspace Name",
-                    value=workspace_name,
-                    placeholder="My Workspace",
-                )
+            workspace_prompt_dir, workspace_var_rows, workspace_status_initial = load_workspace_config_ui()
 
             with gr.Row():
                 prompt_dir_input = gr.Textbox(
                     label="Prompts Directory",
                     value=workspace_prompt_dir,
                     placeholder="prompts",
-                )
-                data_dir_input = gr.Textbox(
-                    label="Data Directory",
-                    value=workspace_data_dir,
-                    placeholder="prompt-data",
                 )
 
             save_workspace_config_btn = gr.Button("💾 Save Workspace Config", size="sm")
@@ -655,7 +637,7 @@ def create_ui():
         # Section 2: Workspace Config
         save_workspace_config_btn.click(
             fn=save_workspace_config_ui,
-            inputs=[workspace_name_input, prompt_dir_input, data_dir_input],
+            inputs=[prompt_dir_input],
             outputs=[workspace_config_status],
         )
 
@@ -668,9 +650,7 @@ def create_ui():
         refresh_workspace_btn.click(
             fn=refresh_workspace_config,
             outputs=[
-                workspace_name_input,
                 prompt_dir_input,
-                data_dir_input,
                 var_table,
                 workspace_config_status,
             ],

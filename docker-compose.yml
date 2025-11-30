@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  prompt-engineer:
+    build: .
+    image: prompt-engineer:latest
+    container_name: prompt-engineer
+    ports:
+      - "7860:7860"
+    volumes:
+      # Mount your workspace directory (adjust path as needed)
+      - ./workspace:/workspace
+      # Persist user config
+      - prompt-engineer-config:/root/.prompt-engineer
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+
+volumes:
+  prompt-engineer-config:
+    driver: local

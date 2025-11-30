@@ -43,6 +43,55 @@ prompt-engineer --workspace /path/to/your/project
 prompt-engineer --port 8080
 ```
 
+## Docker Usage
+
+### Pull from Docker Hub
+
+```bash
+# Pull the latest version
+docker pull yourusername/prompt-engineer:latest
+
+# Run with a local workspace
+docker run -it --rm \
+  -p 7860:7860 \
+  -v $(pwd):/workspace \
+  -v prompt-engineer-config:/root/.prompt-engineer \
+  yourusername/prompt-engineer:latest
+```
+
+### Build Locally
+
+```bash
+# Build the image
+docker build -t prompt-engineer .
+
+# Run with docker-compose
+docker-compose up
+
+# Or run directly
+docker run -it --rm \
+  -p 7860:7860 \
+  -v $(pwd)/workspace:/workspace \
+  -v prompt-engineer-config:/root/.prompt-engineer \
+  prompt-engineer
+```
+
+### Volume Mounts
+
+- `/workspace` - Your project directory with prompts and data
+- `/root/.prompt-engineer` - User configuration (API keys, provider settings)
+
+### Environment Variables
+
+```bash
+# Run on a different port
+docker run -it --rm \
+  -p 8080:8080 \
+  -v $(pwd):/workspace \
+  yourusername/prompt-engineer:latest \
+  prompt-engineer --workspace /workspace --port 8080
+```
+
 ## Usage
 
 The UI is organized into 4 collapsible accordion sections:

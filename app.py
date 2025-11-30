@@ -5,7 +5,6 @@ A developer workbench for rapid prompt engineering iteration with workspace-cent
 """
 
 import gradio as gr
-from gradio_modal import Modal
 from pathlib import Path
 from typing import Optional, List, Tuple
 import os
@@ -601,16 +600,17 @@ def create_ui():
                             )
                             create_new_btn = gr.Button("➕ New", size="sm", scale=1)
 
-                        # New Prompt Dialog - Using gradio_modal for proper modal behavior
-                        with Modal(visible=False, allow_user_close=True) as new_prompt_modal:
-                            gr.Markdown("### ➕ Create New Prompt")
-                            new_prompt_name = gr.Textbox(
-                                label="Prompt Name",
-                                placeholder="e.g., code_review"
-                            )
-                            with gr.Row():
-                                create_prompt_btn = gr.Button("Create", variant="primary", scale=1)
-                                cancel_create_btn = gr.Button("Cancel", scale=1)
+                        # New Prompt Dialog - Simple visibility toggle
+                        new_prompt_dialog_title = gr.Markdown("### ➕ Create New Prompt", visible=False)
+                        new_prompt_name = gr.Textbox(
+                            label="Prompt Name",
+                            placeholder="e.g., code_review",
+                            visible=False
+                        )
+                        new_prompt_dialog_buttons = gr.Row(visible=False)
+                        with new_prompt_dialog_buttons:
+                            create_prompt_btn = gr.Button("Create", variant="primary", scale=1)
+                            cancel_create_btn = gr.Button("Cancel", scale=1)
 
                         # File Info
                         prompt_file_info = gr.Markdown("*No file selected*")
@@ -961,12 +961,20 @@ def create_ui():
 
         # New Prompt Dialog handlers
         def show_create_dialog():
-            """Show the create new prompt dialog."""
-            return Modal(visible=True)
+            """Show the create new prompt dialog (all 3 components)."""
+            return (
+                gr.update(visible=True),  # title
+                gr.update(visible=True),  # text field
+                gr.update(visible=True)   # buttons row
+            )
 
         def hide_create_dialog():
-            """Hide the create new prompt dialog."""
-            return Modal(visible=False)
+            """Hide the create new prompt dialog (all 3 components)."""
+            return (
+                gr.update(visible=False),  # title
+                gr.update(visible=False),  # text field
+                gr.update(visible=False)   # buttons row
+            )
 
         def handle_create_prompt(name):
             """Create a new prompt and refresh the list."""
@@ -974,37 +982,34 @@ def create_ui():
             # Get the safe name that was actually created
             import re
             safe_name = re.sub(r'[^a-zA-Z0-9_-]', '_', name.strip().lower())
-            # Hide dialog, clear name field, update dropdown choices only (don't set value yet)
+            # Hide dialog (all 3 components), clear name field, update dropdown choices
             return (
-                Modal(visible=False),
-                "",
-                gr.update(choices=updated_choices),
-                status,
+                gr.update(visible=False),  # title
+                gr.update(visible=False, value=""),  # text field - hide and clear
+                gr.update(visible=False),  # buttons row
+                gr.update(choices=updated_choices),  # dropdown choices
+                status,  # status message
                 safe_name  # Return safe_name to trigger loading
             )
 
         create_new_btn.click(
             fn=show_create_dialog,
-            outputs=[new_prompt_modal],
-            queue=False
+            outputs=[new_prompt_dialog_title, new_prompt_name, new_prompt_dialog_buttons]
         )
 
         cancel_create_btn.click(
             fn=hide_create_dialog,
-            outputs=[new_prompt_modal],
-            queue=False  # Process immediately without queuing
+            outputs=[new_prompt_dialog_title, new_prompt_name, new_prompt_dialog_buttons]
         )
 
         create_prompt_btn.click(
             fn=handle_create_prompt,
             inputs=[new_prompt_name],
-            outputs=[new_prompt_modal, new_prompt_name, prompt_selector, editor_status, new_prompt_to_select],
-            queue=False
+            outputs=[new_prompt_dialog_title, new_prompt_name, new_prompt_dialog_buttons, prompt_selector, editor_status, new_prompt_to_select]
         ).then(
             fn=lambda name: name,  # Just pass through the name
             inputs=[new_prompt_to_select],
-            outputs=[prompt_selector],
-            queue=False
+            outputs=[prompt_selector]
         )
 
         # Trigger initial load if a prompt is selected

@@ -12,8 +12,11 @@ def list_prompt_files(workspace_root: str, prompt_dir: str) -> List[str]:
     if not prompt_path.exists():
         return []
 
-    # Find all .txt files
-    files = sorted([f.name for f in prompt_path.glob("*.txt")])
+    # Find all files (any extension), excluding directories and hidden files
+    files = sorted([
+        f.name for f in prompt_path.iterdir()
+        if f.is_file() and not f.name.startswith('.')
+    ])
     return files
 
 

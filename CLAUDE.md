@@ -86,7 +86,7 @@ prompt-engineer/
 - Supports provider presets (OpenAI, Ollama, LM Studio, OpenRouter)
 
 **2. prompts.py - Prompt Operations**
-- `list_prompt_files()`: Discover `.txt` files in prompt directory
+- `list_prompt_files()`: Discover all files in prompt directory (any extension, excludes hidden files and directories)
 - `load_prompt_file()` / `save_prompt_file()`: File I/O
 - `extract_variables()`: Find `{var_name}` patterns in templates
 - `interpolate_prompt()`: Replace variables with values from config

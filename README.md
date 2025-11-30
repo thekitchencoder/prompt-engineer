@@ -59,7 +59,7 @@ Configure your LLM provider (OpenAI, Ollama, LM Studio, OpenRouter, etc.), API k
 - **Purpose**: Workspace paths and variable mappings
 
 Define:
-- Prompt directory (where `.txt` prompt files live)
+- Prompt directory (where prompt files live - any file extension supported)
 - Variable mappings:
   ```yaml
   variables:

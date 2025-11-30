@@ -600,15 +600,15 @@ def create_ui():
                             )
                             create_new_btn = gr.Button("➕ New", size="sm", scale=1)
 
-                        # New Prompt Dialog - Each component controlled individually
-                        new_prompt_dialog_title = gr.Markdown("### ➕ Create New Prompt", visible=False)
-                        new_prompt_name = gr.Textbox(
-                            label="Prompt Name",
-                            placeholder="e.g., code_review",
-                            visible=False
-                        )
+                        # New Prompt Dialog - Title and input in Column, buttons separate
+                        with gr.Column(visible=False) as new_prompt_dialog_content:
+                            gr.Markdown("### ➕ Create New Prompt")
+                            new_prompt_name = gr.Textbox(
+                                label="Prompt Name",
+                                placeholder="e.g., code_review"
+                            )
 
-                        # Dialog buttons
+                        # Dialog buttons outside the content so cancel can hide parent
                         with gr.Row(visible=False) as new_prompt_dialog_buttons:
                             create_prompt_btn = gr.Button("Create", variant="primary", scale=1)
                             cancel_create_btn = gr.Button("Cancel", scale=1)
@@ -962,18 +962,16 @@ def create_ui():
 
         # New Prompt Dialog handlers
         def show_create_dialog():
-            """Show the create new prompt dialog (all 3 components)."""
+            """Show the create new prompt dialog (content + buttons)."""
             return (
-                gr.update(visible=True),   # dialog title
-                gr.update(visible=True),   # dialog textbox
+                gr.update(visible=True),   # dialog content (title + textbox)
                 gr.update(visible=True)    # dialog buttons
             )
 
         def hide_create_dialog():
-            """Hide the create new prompt dialog (all 3 components)."""
+            """Hide the create new prompt dialog (content + buttons)."""
             return (
-                gr.update(visible=False),  # dialog title
-                gr.update(visible=False),  # dialog textbox
+                gr.update(visible=False),  # dialog content
                 gr.update(visible=False)   # dialog buttons
             )
 
@@ -982,9 +980,9 @@ def create_ui():
             # Handle None or empty name
             if not name:
                 return (
-                    gr.update(visible=True),  # Keep title visible
-                    gr.update(visible=True, value=""),  # Keep textbox visible, clear it
+                    gr.update(visible=True),  # Keep content visible
                     gr.update(visible=True),  # Keep buttons visible
+                    gr.update(value=""),  # Clear textbox
                     gr.update(),  # Don't change dropdown
                     "⚠️ Please enter a prompt name",  # Error status
                     ""  # No new prompt to load
@@ -996,9 +994,9 @@ def create_ui():
             safe_name = re.sub(r'[^a-zA-Z0-9_-]', '_', name.strip().lower())
             # Hide dialog, clear name field, update dropdown CHOICES only (not value yet)
             return (
-                gr.update(visible=False),  # Hide title
-                gr.update(visible=False, value=""),  # Hide textbox and clear it
+                gr.update(visible=False),  # Hide content
                 gr.update(visible=False),  # Hide buttons
+                gr.update(value=""),  # Clear textbox
                 gr.update(choices=updated_choices),  # Update dropdown choices only
                 status,  # Status message
                 safe_name  # Store name to load in next step
@@ -1012,18 +1010,18 @@ def create_ui():
 
         create_new_btn.click(
             fn=show_create_dialog,
-            outputs=[new_prompt_dialog_title, new_prompt_name, new_prompt_dialog_buttons]
+            outputs=[new_prompt_dialog_content, new_prompt_dialog_buttons]
         )
 
         cancel_create_btn.click(
             fn=hide_create_dialog,
-            outputs=[new_prompt_dialog_title, new_prompt_name, new_prompt_dialog_buttons]
+            outputs=[new_prompt_dialog_content, new_prompt_dialog_buttons]
         )
 
         create_prompt_btn.click(
             fn=handle_create_prompt,
             inputs=[new_prompt_name],
-            outputs=[new_prompt_dialog_title, new_prompt_name, new_prompt_dialog_buttons, prompt_selector, editor_status, new_prompt_to_load]
+            outputs=[new_prompt_dialog_content, new_prompt_dialog_buttons, new_prompt_name, prompt_selector, editor_status, new_prompt_to_load]
         ).then(
             fn=select_new_prompt,
             inputs=[new_prompt_to_load],

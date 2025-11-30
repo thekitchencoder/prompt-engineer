@@ -469,47 +469,11 @@ def create_ui():
             user_config_status = gr.Textbox(label="Status", lines=2)
 
         # ====================================================================
-        # Section 2: Workspace Config
+        # Section 2: Prompt Editor
         # ====================================================================
 
-        with gr.Accordion("📁 Workspace Configuration", open=True) as workspace_config_section:
-            gr.Markdown(f"### Workspace Settings (saved to `{get_workspace_root()}/.prompt-engineer/workspace.yaml`)")
-
-            workspace_prompt_dir, workspace_var_rows, workspace_status_initial = load_workspace_config_ui()
-
-            gr.Markdown("### Variable Mappings")
-
-            with gr.Row():
-                var_name_input = gr.Textbox(label="Variable Name", scale=2, placeholder="my_variable")
-                var_type_radio = gr.Radio(["file", "value"], label="Type", value="value", scale=1)
-
-            var_source_input = gr.Textbox(
-                label="File Path (relative to workspace) or Value",
-                lines=3,
-                placeholder="prompt-data/my-file.txt or inline text value",
-            )
-
-            add_var_btn = gr.Button("➕ Add Variable", size="sm")
-
-            var_table = gr.Dataframe(
-                headers=["Name", "Type", "Source"],
-                value=workspace_var_rows,
-                label="Defined Variables",
-                interactive=False,
-            )
-
-            with gr.Row():
-                refresh_workspace_btn = gr.Button("🔄 Refresh from Disk", size="sm")
-                workspace_config_status = gr.Textbox(
-                    label="Status",
-                    value=workspace_status_initial,
-                    interactive=False,
-                    lines=3,
-                )
-
-        # ====================================================================
-        # Section 3: Prompt Editor
-        # ====================================================================
+        # Load workspace config for initial values
+        workspace_prompt_dir, workspace_var_rows, workspace_status_initial = load_workspace_config_ui()
 
         with gr.Accordion("✏️ Prompt Editor", open=True) as prompt_editor_section:
             gr.Markdown("### Edit Prompt Files")
@@ -547,6 +511,43 @@ def create_ui():
                     )
 
             prompt_status = gr.Textbox(label="Status", interactive=False)
+
+        # ====================================================================
+        # Section 3: Workspace Config
+        # ====================================================================
+
+        with gr.Accordion("📁 Workspace Configuration", open=True) as workspace_config_section:
+            gr.Markdown(f"### Workspace Settings (saved to `{get_workspace_root()}/.prompt-engineer/workspace.yaml`)")
+
+            gr.Markdown("### Variable Mappings")
+
+            with gr.Row():
+                var_name_input = gr.Textbox(label="Variable Name", scale=2, placeholder="my_variable")
+                var_type_radio = gr.Radio(["file", "value"], label="Type", value="value", scale=1)
+
+            var_source_input = gr.Textbox(
+                label="File Path (relative to workspace) or Value",
+                lines=3,
+                placeholder="prompt-data/my-file.txt or inline text value",
+            )
+
+            add_var_btn = gr.Button("➕ Add Variable", size="sm")
+
+            var_table = gr.Dataframe(
+                headers=["Name", "Type", "Source"],
+                value=workspace_var_rows,
+                label="Defined Variables",
+                interactive=False,
+            )
+
+            with gr.Row():
+                refresh_workspace_btn = gr.Button("🔄 Refresh from Disk", size="sm")
+                workspace_config_status = gr.Textbox(
+                    label="Status",
+                    value=workspace_status_initial,
+                    interactive=False,
+                    lines=3,
+                )
 
         # ====================================================================
         # Section 4: LLM Interaction
@@ -636,23 +637,7 @@ def create_ui():
             outputs=[user_config_status],
         )
 
-        # Section 2: Workspace Config
-        add_var_btn.click(
-            fn=add_variable_ui,
-            inputs=[var_name_input, var_type_radio, var_source_input],
-            outputs=[var_table, workspace_config_status],
-        )
-
-        refresh_workspace_btn.click(
-            fn=refresh_workspace_config,
-            outputs=[
-                prompt_dir_input,
-                var_table,
-                workspace_config_status,
-            ],
-        )
-
-        # Section 3: Prompt Editor
+        # Section 2: Prompt Editor
         refresh_prompts_btn.click(
             fn=refresh_prompt_list,
             inputs=[prompt_dir_input],
@@ -681,6 +666,22 @@ def create_ui():
             fn=save_prompt_ui,
             inputs=[prompt_file_dropdown, prompt_editor],
             outputs=[prompt_status],
+        )
+
+        # Section 3: Workspace Config
+        add_var_btn.click(
+            fn=add_variable_ui,
+            inputs=[var_name_input, var_type_radio, var_source_input],
+            outputs=[var_table, workspace_config_status],
+        )
+
+        refresh_workspace_btn.click(
+            fn=refresh_workspace_config,
+            outputs=[
+                prompt_dir_input,
+                var_table,
+                workspace_config_status,
+            ],
         )
 
         # Section 4: LLM Interaction

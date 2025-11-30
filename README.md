@@ -19,13 +19,20 @@ Prompt Engineer is designed for building AI-enabled applications where prompts a
 # Clone the repository
 cd prompt-engineer
 
-# Install in development mode
+# Create and activate virtual environment
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+
+# Install the application
 pip install -e .
 ```
 
 ## Quick Start
 
 ```bash
+# Make sure venv is activated
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+
 # Run from your project directory (uses current directory as workspace)
 prompt-engineer
 

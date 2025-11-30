@@ -20,23 +20,30 @@ Prompt Engineer is a CLI-based developer workbench for rapid AI prompt engineeri
 
 ### Installation
 ```bash
-# Install in development mode
-pip install -e .
+# Create and activate virtual environment
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
-# Or install dependencies directly
-pip install -r requirements.txt
+# Install in development mode (installs all dependencies)
+pip install -e .
 ```
 
 ### Running the Application
 ```bash
-# Run from current directory (uses as workspace)
-python -m prompt_engineer.app
+# Make sure venv is activated
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+
+# Run using CLI command
+prompt-engineer
 
 # Or specify workspace
-python -m prompt_engineer.app --workspace /path/to/project
+prompt-engineer --workspace /path/to/project
 
 # Custom port
-python -m prompt_engineer.app --port 8080
+prompt-engineer --port 8080
+
+# Alternative: Run as Python module
+python -m prompt_engineer.app
 ```
 
 ### Testing
@@ -45,7 +52,7 @@ python -m prompt_engineer.app --port 8080
 mkdir -p /tmp/test-workspace/prompts /tmp/test-workspace/prompt-data
 
 # Run against test workspace
-python -m prompt_engineer.app --workspace /tmp/test-workspace
+prompt-engineer --workspace /tmp/test-workspace
 ```
 
 ## Architecture

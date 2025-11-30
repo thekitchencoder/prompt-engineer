@@ -598,20 +598,7 @@ def create_ui():
                                 interactive=True,
                                 scale=3
                             )
-                            create_new_btn = gr.Button("➕ New", size="sm", scale=1)
-
-                        # New Prompt Dialog - Title and input in Column, buttons separate
-                        with gr.Column(visible=False) as new_prompt_dialog_content:
-                            gr.Markdown("### ➕ Create New Prompt")
-                            new_prompt_name = gr.Textbox(
-                                label="Prompt Name",
-                                placeholder="e.g., code_review"
-                            )
-
-                        # Dialog buttons outside the content so cancel can hide parent
-                        with gr.Row(visible=False) as new_prompt_dialog_buttons:
-                            create_prompt_btn = gr.Button("Create", variant="primary", scale=1)
-                            cancel_create_btn = gr.Button("Cancel", scale=1)
+                            refresh_prompts_btn = gr.Button("🔄 Refresh", size="sm", scale=1)
 
                         # File Info
                         prompt_file_info = gr.Markdown("*No file selected*")
@@ -655,9 +642,6 @@ def create_ui():
                         # Hidden state to track unsaved changes
                         original_prompt_content = gr.State("")
                         original_vars_content = gr.State("")
-
-                        # Hidden state for newly created prompt name
-                        new_prompt_to_load = gr.State("")
 
                     # ============================================================
                     # VIEW 2: LLM COMPOSITION & TESTING
@@ -960,71 +944,14 @@ def create_ui():
             outputs=[editor_status]
         )
 
-        # New Prompt Dialog handlers
-        def show_create_dialog():
-            """Show the create new prompt dialog (content + buttons)."""
-            return (
-                gr.update(visible=True),   # dialog content (title + textbox)
-                gr.update(visible=True)    # dialog buttons
-            )
+        # Refresh prompts handler
+        def refresh_prompt_list():
+            """Reload the list of available prompts from disk."""
+            updated_choices = get_prompt_names()
+            return gr.update(choices=updated_choices)
 
-        def hide_create_dialog():
-            """Hide the create new prompt dialog (content + buttons)."""
-            return (
-                gr.update(visible=False),  # dialog content
-                gr.update(visible=False)   # dialog buttons
-            )
-
-        def handle_create_prompt(name):
-            """Create a new prompt and refresh the list."""
-            # Handle None or empty name
-            if not name:
-                return (
-                    gr.update(visible=True),  # Keep content visible
-                    gr.update(visible=True),  # Keep buttons visible
-                    gr.update(value=""),  # Clear textbox
-                    gr.update(),  # Don't change dropdown
-                    "⚠️ Please enter a prompt name",  # Error status
-                    ""  # No new prompt to load
-                )
-
-            status, updated_choices, _ = create_new_prompt(name, "single")
-            # Get the safe name that was actually created
-            import re
-            safe_name = re.sub(r'[^a-zA-Z0-9_-]', '_', name.strip().lower())
-            # Hide dialog, clear name field, update dropdown CHOICES only (not value yet)
-            return (
-                gr.update(visible=False),  # Hide content
-                gr.update(visible=False),  # Hide buttons
-                gr.update(value=""),  # Clear textbox
-                gr.update(choices=updated_choices),  # Update dropdown choices only
-                status,  # Status message
-                safe_name  # Store name to load in next step
-            )
-
-        def select_new_prompt(safe_name):
-            """Select the newly created prompt in the dropdown."""
-            if safe_name:
-                return safe_name
-            return gr.update()  # No change if no new prompt
-
-        create_new_btn.click(
-            fn=show_create_dialog,
-            outputs=[new_prompt_dialog_content, new_prompt_dialog_buttons]
-        )
-
-        cancel_create_btn.click(
-            fn=hide_create_dialog,
-            outputs=[new_prompt_dialog_content, new_prompt_dialog_buttons]
-        )
-
-        create_prompt_btn.click(
-            fn=handle_create_prompt,
-            inputs=[new_prompt_name],
-            outputs=[new_prompt_dialog_content, new_prompt_dialog_buttons, new_prompt_name, prompt_selector, editor_status, new_prompt_to_load]
-        ).then(
-            fn=select_new_prompt,
-            inputs=[new_prompt_to_load],
+        refresh_prompts_btn.click(
+            fn=refresh_prompt_list,
             outputs=[prompt_selector]
         )
 

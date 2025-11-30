@@ -394,7 +394,7 @@ def create_ui():
     user_config = load_user_config()
     user_config_valid = not validate_user_config(user_config)
 
-    with gr.Blocks(title="Prompt Engineer", theme=gr.themes.Soft()) as demo:
+    with gr.Blocks(title="Prompt Engineer") as demo:
         gr.Markdown(f"# 🎯 Prompt Engineer\nWorkspace: `{get_workspace_root()}`")
         gr.Markdown("CLI-based prompt engineering workbench for rapid iteration")
 
@@ -752,6 +752,7 @@ def main():
     demo.launch(
         server_name="0.0.0.0",
         server_port=args.port,
+        theme=gr.themes.Soft(),
     )
 
 

@@ -193,7 +193,8 @@ variables:
 - **Thinking tags**: Special handling for `<think>...</think>` from reasoning models
 
 ### Gradio UI Patterns
-- Uses Gradio 6 Accordion components for collapsible sections
+- **Gradio 6**: Uses Gradio 6 (theme passed to `.launch()`, not `Blocks()`)
+- Uses Accordion components for collapsible sections
 - Tabs for different views (Editor/Preview, Formatted/Raw)
 - Real-time updates via `.change()` event handlers
 - Status bars for validation feedback

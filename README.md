@@ -1,243 +1,216 @@
-# Prompt Engineer 🎯
+# Prompt Engineer
 
-A Gradio-based web app for rapid AI prompt iteration. Test and refine your prompts without restarting the application.
+A CLI-based developer workbench for rapid AI prompt engineering iteration.
 
-## Features
+## Concept
 
-- **Live Prompt Editing**: Modify prompts on the fly and test immediately
-- **File-Based Variables**: Load large markdown, YAML, or code files as variables
-- **Template Management**: Save and load your prompt templates with variable configs
-- **Multiple AI Providers**: Works with OpenAI, Ollama, LM Studio, vLLM, OpenRouter, and any OpenAI-compatible API
-- **Custom Models**: Configure any models via environment variables or enter custom model names
-- **Parameter Control**: Adjust temperature and max tokens
-- **No Restart Required**: Edit and test instantly
+Prompt Engineer is designed for building AI-enabled applications where prompts are compiled into the application with variables interpolated at runtime. It provides a simple, low-friction workflow for:
 
-## Setup
+- Editing prompt templates with variable interpolation
+- Managing variable mappings (files or fixed values)
+- Testing prompts against multiple LLM providers
+- Viewing formatted and raw API responses
 
-1. Install dependencies:
+**Key Insight**: Prompts live in your application's source code, NOT in Prompt Engineer. This tool points to prompt files in your app's repo and edits them in-place.
+
+## Installation
+
 ```bash
-pip install -r requirements.txt
+# Clone the repository
+cd prompt-engineer
+
+# Install in development mode
+pip install -e .
 ```
 
-2. Configure your AI provider:
+## Quick Start
+
 ```bash
-cp .env.example .env
-# Edit .env and configure for your provider (see below)
+# Run from your project directory (uses current directory as workspace)
+prompt-engineer
+
+# Or specify a workspace directory
+prompt-engineer --workspace /path/to/your/project
+
+# Custom port
+prompt-engineer --port 8080
 ```
-
-3. Run the app:
-```bash
-python app.py
-```
-
-4. Open your browser to `http://localhost:7860`
-
-### Provider Configuration
-
-The app works with any OpenAI-compatible API. Configure via `.env` file:
-
-**OpenAI (default)**:
-```bash
-OPENAI_API_KEY=sk-...
-```
-
-**Ollama (local)**:
-```bash
-OPENAI_API_KEY=not-needed
-OPENAI_BASE_URL=http://localhost:11434/v1
-PROVIDER_NAME=Ollama
-AVAILABLE_MODELS=llama3.2,mistral,codellama,phi3
-```
-
-**LM Studio (local)**:
-```bash
-OPENAI_API_KEY=not-needed
-OPENAI_BASE_URL=http://localhost:1234/v1
-PROVIDER_NAME=LM Studio
-```
-
-**OpenRouter**:
-```bash
-OPENAI_API_KEY=sk-or-v1-...
-OPENAI_BASE_URL=https://openrouter.ai/api/v1
-PROVIDER_NAME=OpenRouter
-AVAILABLE_MODELS=anthropic/claude-3.5-sonnet,openai/gpt-4o
-```
-
-**vLLM or any OpenAI-compatible endpoint**:
-```bash
-OPENAI_API_KEY=your-key-or-not-needed
-OPENAI_BASE_URL=http://your-endpoint:port/v1
-PROVIDER_NAME=Your Provider
-AVAILABLE_MODELS=model1,model2,model3
-```
-
-You can also enter custom model names directly in the UI dropdown.
 
 ## Usage
 
-### Basic Workflow
+The UI is organized into 4 collapsible accordion sections:
 
-1. **Write Your Prompt Template**: Use `{variable_name}` syntax for variables
-   ```
-   You are a {role}.
+### 1. ⚙️ User Configuration
+- **Saved to**: `~/.prompt-engineer/config.yaml`
+- **Purpose**: Provider settings, API keys, default models
+- **Auto-collapse**: Yes (if already configured)
 
-   Context: {background}
+Configure your LLM provider (OpenAI, Ollama, LM Studio, OpenRouter, etc.), API keys, and default model settings. This configuration is saved globally for your user.
 
-   Task: {task}
-   ```
+### 2. 📁 Workspace Configuration
+- **Saved to**: `${workspace}/.prompt-engineer/workspace.yaml`
+- **Purpose**: Workspace paths and variable mappings
 
-2. **Configure Variables**: Define each variable as either a fixed value or file reference
-   ```
-   # Click "🔍 Generate Variable Config" to auto-generate template
-   role:value:helpful assistant
-   background:file:variables/company_context.md
-   task:value:Explain quantum computing
-   ```
+Define:
+- Workspace name
+- Prompt directory (where `.txt` prompt files live)
+- Data directory (where variable data files live)
+- Variable mappings:
+  ```yaml
+  variables:
+    code_to_evaluate:
+      type: file
+      path: "prompt-data/sample-code.java"
 
-3. **Test**: Click "🚀 Test Prompt" to see the formatted prompt and API response
+    evaluation_criteria:
+      type: value
+      value: "Correctness, performance, security"
+  ```
 
-4. **Iterate**: Modify the template or variables and test again - no restart needed!
+### 3. ✏️ Prompt Editor
+- Edit prompt template files
+- Use `{variable_name}` syntax for variables
+- **Two tabs**:
+  - **Editor**: Edit the raw template
+  - **Interpolated Preview**: See the final prompt with variables substituted
 
-### Variable Configuration Format
+Real-time validation shows unmapped variables and file issues.
 
-Variables can be defined in two ways:
+### 4. 🚀 LLM Interaction
+- Choose system and/or user prompts
+- Override model settings if needed
+- **Three tabs**:
+  - **Formatted Response**: Rendered Markdown
+  - **Raw Request**: Exact JSON sent to LLM API
+  - **Raw Response**: Full API response object
 
-**Fixed Value:**
-```
-variable_name:value:Your text content here
-```
+Status bar shows tokens, estimated cost, and timing.
 
-**File Reference (for large markdown/YAML/code):**
-```
-variable_name:file:path/to/your/file.md
-```
+## Example Workflow
 
-This is perfect for:
-- Large markdown documentation
-- YAML configuration files
-- Code snippets
-- Data structures
-- Any content you want to keep in separate files
+1. **Setup (one-time)**:
+   - Configure user settings (API key, provider, models)
+   - Define workspace paths (prompts directory, data directory)
+   - Map variables to files or values
 
-### Template Management
+2. **Daily iteration**:
+   - Open prompt editor section
+   - Select a prompt file
+   - Edit template, see live interpolated preview
+   - Save changes
+   - Open LLM interaction section
+   - Select prompts, run, review responses
+   - Iterate!
 
-- **Save**: Give your template a name and click "💾 Save" (saves both template and variable config)
-- **Load**: Enter a template name and click "📂 Load" (loads both)
-- **List**: Click "📋 List" to see all saved templates
-
-### Model Parameters
-
-- **Model**: Choose from GPT-4o, GPT-4 Turbo, or GPT-3.5 Turbo
-- **Temperature**: Control randomness (0 = deterministic, 2 = very random)
-- **Max Tokens**: Limit response length
-
-## Example Templates
-
-### Simple Example - Customer Support
-```
-You are a friendly customer support agent for {company}.
-
-Customer issue: {issue}
-
-Provide a helpful and empathetic response.
-```
-
-Variables:
-```
-company:value:Acme Corp
-issue:value:I received a damaged product
-```
-
-### Advanced Example - Product Announcement with File-Based Context
-```
-You are a professional marketing copywriter.
-
-Company Context:
-{context}
-
-Write a compelling product announcement for: {feature_name}
-
-Target channel: {channel}
-Tone: {tone}
-```
-
-Variables:
-```
-context:file:variables/sample_context.md
-feature_name:value:AI-Powered Workflow Suggestions
-channel:value:email newsletter
-tone:value:professional yet friendly
-```
-
-### Technical Spec with YAML Requirements
-```
-You are a senior software architect.
-
-Project Requirements:
-{requirements}
-
-Create a technical specification for {component}.
-
-Focus on: {focus_areas}
-```
-
-Variables:
-```
-requirements:file:variables/sample_requirements.yaml
-component:value:authentication system
-focus_areas:value:scalability and security
-```
-
-## Environment Variables
-
-The app is configured via environment variables in `.env`:
-
-| Variable | Description | Default | Required |
-|----------|-------------|---------|----------|
-| `OPENAI_API_KEY` | API key for your provider | - | Yes (except local) |
-| `OPENAI_BASE_URL` | Base URL for OpenAI-compatible API | None (uses OpenAI) | No |
-| `PROVIDER_NAME` | Display name in UI | "OpenAI" | No |
-| `AVAILABLE_MODELS` | Comma-separated list of models | OpenAI models | No |
-
-**Notes:**
-- For local models (Ollama, LM Studio), set `OPENAI_API_KEY=not-needed`
-- If `AVAILABLE_MODELS` is not set, uses default OpenAI models
-- You can always type custom model names in the UI dropdown
-- The app works with any service that implements the OpenAI Chat Completions API
-
-## Project Structure
+## File Structure
 
 ```
-prompt-engineer/
-├── app.py                    # Main Gradio application
-├── requirements.txt          # Python dependencies
-├── .env.example              # Environment template
-├── .env                      # Your API keys (git-ignored)
-├── templates/                # Saved prompt templates
-│   ├── *.txt                # Template files
-│   └── *.vars               # Variable configuration files
-├── variables/                # Reusable variable content files
-│   ├── sample_context.md    # Example: company/product context
-│   ├── sample_requirements.yaml  # Example: YAML specifications
-│   ├── sample_code.py       # Example: code to review
-│   └── sample_data.md       # Example: data for analysis
-└── README.md                 # This file
+your-project/
+├── .prompt-engineer/
+│   └── workspace.yaml          # Workspace configuration
+├── prompts/                    # Prompt templates
+│   ├── system-reviewer.txt
+│   └── user-reviewer.txt
+└── prompt-data/                # Variable data files
+    ├── sample-code.py
+    └── criteria.md
 ```
 
-### Sample Files Included
+## Configuration Files
 
-The project includes sample variable files to get you started:
+### User Config (`~/.prompt-engineer/config.yaml`)
 
-- **variables/sample_context.md** - Company and product context
-- **variables/sample_requirements.yaml** - Technical requirements in YAML
-- **variables/sample_code.py** - Python code for review
-- **variables/sample_data.md** - Business data for analysis
+```yaml
+provider: "openai"
+api_key: "sk-..."
+base_url: ""  # Leave empty for OpenAI
 
-Load the included templates to see how these work:
-- `product_announcement` - Uses file-based company context
-- `technical_spec` - Uses YAML requirements file
-- `data_analysis` - Uses markdown data file
+models:
+  - "gpt-4o"
+  - "gpt-4o-mini"
+
+defaults:
+  model: "gpt-4o"
+  temperature: 0.7
+  max_tokens: 2000
+
+presets:
+  openai:
+    base_url: ""
+    api_key_required: true
+    default_models: ["gpt-4o", "gpt-4o-mini"]
+
+  ollama:
+    base_url: "http://localhost:11434/v1"
+    api_key_required: false
+    default_models: ["llama3.2", "mistral"]
+```
+
+### Workspace Config (`${workspace}/.prompt-engineer/workspace.yaml`)
+
+```yaml
+name: "My App Prompts"
+
+paths:
+  prompts: "prompts"
+  data: "prompt-data"
+
+variables:
+  code_to_evaluate:
+    type: file
+    path: "prompt-data/sample-code.java"
+    description: "Code to evaluate"  # Optional
+
+  evaluation_criteria:
+    type: value
+    value: |
+      - Code correctness
+      - Performance
+      - Security
+
+defaults:
+  model: "gpt-4o"  # Override user default for this workspace
+  temperature: 0.3
+```
+
+## Features
+
+- ✅ **Simple CLI installation** - `pip install -e .`
+- ✅ **Workspace-centric** - Points to your app's source code
+- ✅ **Provider-agnostic** - Works with any OpenAI-compatible API
+- ✅ **Variable interpolation** - `{var}` syntax with file or value sources
+- ✅ **Live preview** - See interpolated prompts before running
+- ✅ **Raw visibility** - See exact request/response JSON
+- ✅ **Cost estimation** - Token count and cost estimates
+- ✅ **Auto-save** - Changes saved to files automatically
+
+## POC Status
+
+This is a **proof-of-concept** to validate the core workflow:
+- Editing prompts in-place (workspace-centric)
+- Low-friction variable management
+- Clear visibility into LLM interactions
+
+**Not included in POC**:
+- Chain workflows (evaluator-optimizer patterns)
+- Git integration
+- File watchers for external changes
+- Advanced UI (tree views, syntax highlighting)
+
+See `archive/ROADMAP.md` for future feature plans.
+
+## Development
+
+```bash
+# Install in development mode
+pip install -e .
+
+# Run directly
+python -m prompt_engineer.app
+
+# Or use CLI
+prompt-engineer
+```
 
 ## License
 

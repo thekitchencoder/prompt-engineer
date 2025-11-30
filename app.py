@@ -656,9 +656,6 @@ def create_ui():
                         original_prompt_content = gr.State("")
                         original_vars_content = gr.State("")
 
-                        # Hidden state for newly created prompt
-                        new_prompt_to_select = gr.State("")
-
                     # ============================================================
                     # VIEW 2: LLM COMPOSITION & TESTING
                     # ============================================================
@@ -982,24 +979,22 @@ def create_ui():
                 return (
                     gr.update(visible=True),  # Keep dialog content visible
                     gr.update(visible=True),  # Keep buttons visible
-                    "",  # Clear name field
+                    gr.update(value=""),  # Clear name field
                     gr.update(),  # Don't change dropdown
-                    "⚠️ Please enter a prompt name",  # Error status
-                    ""  # No safe_name to select
+                    "⚠️ Please enter a prompt name"  # Error status
                 )
 
             status, updated_choices, _ = create_new_prompt(name, "single")
             # Get the safe name that was actually created
             import re
             safe_name = re.sub(r'[^a-zA-Z0-9_-]', '_', name.strip().lower())
-            # Hide dialog, clear name field, update dropdown choices
+            # Hide dialog, clear name field, update dropdown with new choices AND select the new prompt
             return (
                 gr.update(visible=False),  # Hide dialog content
                 gr.update(visible=False),  # Hide buttons
-                "",  # Clear name field
-                gr.update(choices=updated_choices),  # Update dropdown choices
-                status,  # Status message
-                safe_name  # Return safe_name to trigger loading
+                gr.update(value=""),  # Clear name field
+                gr.update(choices=updated_choices, value=safe_name),  # Update dropdown and select new prompt
+                status  # Status message
             )
 
         create_new_btn.click(
@@ -1015,11 +1010,7 @@ def create_ui():
         create_prompt_btn.click(
             fn=handle_create_prompt,
             inputs=[new_prompt_name],
-            outputs=[new_prompt_dialog, new_prompt_dialog_buttons, new_prompt_name, prompt_selector, editor_status, new_prompt_to_select]
-        ).then(
-            fn=lambda name: name,  # Just pass through the name
-            inputs=[new_prompt_to_select],
-            outputs=[prompt_selector]
+            outputs=[new_prompt_dialog, new_prompt_dialog_buttons, new_prompt_name, prompt_selector, editor_status]
         )
 
         # Trigger initial load if a prompt is selected

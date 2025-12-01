@@ -62,13 +62,14 @@ The application is organized into a Python package with clear separation of conc
 
 ```
 prompt-engineer/
-├── prompt_engineer/           # Main package
-│   ├── __init__.py
-│   ├── app.py                # Gradio UI with 4 accordion sections
-│   ├── config.py             # User + workspace config management
-│   ├── prompts.py            # Prompt file operations, interpolation
-│   └── llm.py                # LLM provider integration, API calls
-├── setup.py                   # CLI installation
+├── src/
+│   └── prompt_engineer/      # Main package
+│       ├── __init__.py
+│       ├── app.py            # Gradio UI with 4 accordion sections
+│       ├── config.py         # User + workspace config management
+│       ├── prompts.py        # Prompt file operations, interpolation
+│       └── llm.py            # LLM provider integration, API calls
+├── pyproject.toml            # Package configuration and CLI installation
 ├── requirements.txt
 ├── app_old.py                # Original single-file reference
 └── archive/                  # Archived docs

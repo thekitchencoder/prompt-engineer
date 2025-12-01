@@ -20,5 +20,5 @@ dependencies = [
 prompt-engineer = "prompt_engineer.app:main"
 
 [tool.setuptools.packages.find]
-where = ["."]
+where = ["src"]
 include = ["prompt_engineer*"]

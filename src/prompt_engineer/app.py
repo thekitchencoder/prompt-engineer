@@ -185,29 +185,20 @@ def save_workspace_config_ui(
     return save_workspace_config(get_workspace_root(), config)
 
 
-def add_variable_ui(var_name: str, var_type: str, var_source: str) -> tuple:
-    """Add a new variable to workspace config."""
-    if not var_name:
-        return [], "⚠️ Variable name required"
+def add_variable_row_ui(var_rows) -> tuple:
+    """Add a new empty row to the variable table."""
+    import pandas as pd
 
-    config = load_workspace_config(get_workspace_root())
-    variables = config.get("variables", {})
-
-    # Add variable
-    if var_type == "file":
-        variables[var_name] = {"type": "file", "path": var_source}
+    # Handle pandas DataFrame from Gradio
+    if isinstance(var_rows, pd.DataFrame):
+        var_list = var_rows.values.tolist() if not var_rows.empty else []
     else:
-        variables[var_name] = {"type": "value", "value": var_source}
+        var_list = var_rows if var_rows else []
 
-    config["variables"] = variables
+    # Add new empty row
+    var_list.append(["", "value", ""])
 
-    # Save
-    result = save_workspace_config(get_workspace_root(), config)
-
-    # Reload table
-    _, _, _, var_rows, status = load_workspace_config_ui()
-
-    return var_rows, result
+    return var_list, "ℹ️ New row added - edit inline and it will auto-save"
 
 
 def refresh_workspace_config() -> tuple:
@@ -571,18 +562,7 @@ def create_ui():
             gr.Markdown(f"### Workspace Settings (saved to `{get_workspace_root()}/.prompt-engineer/workspace.yaml`)")
 
             gr.Markdown("### Variable Mappings")
-
-            with gr.Row():
-                var_name_input = gr.Textbox(label="Variable Name", scale=2, placeholder="my_variable")
-                var_type_radio = gr.Radio(["file", "value"], label="Type", value="value", scale=1)
-
-            var_source_input = gr.Textbox(
-                label="File Path (relative to workspace) or Value",
-                lines=3,
-                placeholder="prompt-data/my-file.txt or inline text value",
-            )
-
-            add_var_btn = gr.Button("➕ Add Variable", size="sm")
+            gr.Markdown("Edit cells inline - changes auto-save. Delete variables by clearing the Name field.")
 
             var_table = gr.Dataframe(
                 headers=["Name", "Type", "Source"],
@@ -592,13 +572,15 @@ def create_ui():
             )
 
             with gr.Row():
+                add_row_btn = gr.Button("➕ Add Row", size="sm")
                 refresh_workspace_btn = gr.Button("🔄 Refresh from Disk", size="sm")
-                workspace_config_status = gr.Textbox(
-                    label="Status",
-                    value=workspace_status_initial,
-                    interactive=False,
-                    lines=3,
-                )
+
+            workspace_config_status = gr.Textbox(
+                label="Status",
+                value=workspace_status_initial,
+                interactive=False,
+                lines=2,
+            )
 
         # ====================================================================
         # Section 4: LLM Interaction
@@ -720,9 +702,9 @@ def create_ui():
         )
 
         # Section 3: Workspace Config
-        add_var_btn.click(
-            fn=add_variable_ui,
-            inputs=[var_name_input, var_type_radio, var_source_input],
+        add_row_btn.click(
+            fn=add_variable_row_ui,
+            inputs=[var_table],
             outputs=[var_table, workspace_config_status],
         )
 

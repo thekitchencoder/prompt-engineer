@@ -112,6 +112,31 @@ def load_models_from_provider(api_key: str, base_url: str) -> tuple:
         )
 
 
+def check_user_config_changes(
+    provider: str,
+    api_key: str,
+    base_url: str,
+    models: List[str],
+    default_model: str,
+    temperature: float,
+    max_tokens: int,
+    original_config: Dict[str, Any],
+) -> dict:
+    """Check if user config has been modified and return save button state."""
+    if (
+        provider != original_config.get("provider", "")
+        or api_key != original_config.get("api_key", "")
+        or base_url != original_config.get("base_url", "")
+        or models != original_config.get("models", [])
+        or default_model != original_config.get("defaults", {}).get("model", "")
+        or temperature != original_config.get("defaults", {}).get("temperature", 0.7)
+        or max_tokens != original_config.get("defaults", {}).get("max_tokens", 4000)
+    ):
+        return gr.update(interactive=True)
+    else:
+        return gr.update(interactive=False)
+
+
 def save_user_config_ui(
     provider: str,
     api_key: str,
@@ -627,6 +652,9 @@ def create_ui():
         # Section 1: User Config
         # ====================================================================
 
+        # Hidden state to track original user config
+        original_user_config_state = gr.State(value=user_config.copy())
+
         with gr.Accordion("⚙️ Configuration", open=not user_config_valid) as user_config_section:
             gr.Markdown("_(saved to `~/.prompt-engineer/config.yaml`)_")
             gr.Markdown("### LLM Provider & Model Configuration")
@@ -694,7 +722,7 @@ def create_ui():
                     label="Max Tokens",
                 )
 
-            save_user_config_btn = gr.Button("💾 Save User Config", variant="primary")
+            save_user_config_btn = gr.Button("💾 Save User Config", variant="primary", interactive=False)
             user_config_status = gr.Textbox(label="Status", lines=2)
 
         # ====================================================================
@@ -854,7 +882,32 @@ def create_ui():
                 default_max_tokens,
             ],
             outputs=[user_config_status, model_override_dropdown, temperature_slider, max_tokens_slider],
+        ).then(
+            fn=lambda: load_user_config().copy(),  # Update original state after save
+            outputs=[original_user_config_state],
+        ).then(
+            fn=lambda: gr.update(interactive=False),  # Disable save button after save
+            outputs=[save_user_config_btn],
         )
+
+        # Add change handlers for all user config fields to enable save button
+        for component in [provider_dropdown, api_key_input, base_url_input, models_multiselect,
+                         default_model_dropdown, default_temperature, default_max_tokens]:
+            component.change(
+                fn=check_user_config_changes,
+                inputs=[
+                    provider_dropdown,
+                    api_key_input,
+                    base_url_input,
+                    models_multiselect,
+                    default_model_dropdown,
+                    default_temperature,
+                    default_max_tokens,
+                    original_user_config_state,
+                ],
+                outputs=[save_user_config_btn],
+                show_progress="hidden",
+            )
 
         # Section 2: Prompt Editor & Variable Management
         # Comprehensive refresh button

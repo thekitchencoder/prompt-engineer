@@ -29,7 +29,13 @@ def list_prompt_files(workspace_root: str, prompt_dir: str) -> List[str]:
         # Use forward slashes for consistency across platforms
         files.append(str(relative_path).replace('\\', '/'))
 
-    return sorted(files)
+    # Sort with root-level files first, then nested files
+    # Sort key: (depth, filename) where depth=0 for root, depth=1+ for nested
+    def sort_key(filepath: str) -> tuple:
+        depth = 0 if '/' not in filepath else 1
+        return (depth, filepath)
+
+    return sorted(files, key=sort_key)
 
 
 def load_prompt_file(workspace_root: str, prompt_dir: str, filename: str) -> str:

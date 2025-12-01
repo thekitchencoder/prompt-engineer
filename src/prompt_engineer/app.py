@@ -215,6 +215,44 @@ def refresh_workspace_config() -> tuple:
     return load_workspace_config_ui()
 
 
+def save_variable_table_ui(var_rows: List[List[str]]) -> str:
+    """Save variable table data back to workspace config."""
+    if not var_rows:
+        # Empty table - clear all variables
+        config = load_workspace_config(get_workspace_root())
+        config["variables"] = {}
+        return save_workspace_config(get_workspace_root(), config)
+
+    config = load_workspace_config(get_workspace_root())
+    variables = {}
+
+    for row in var_rows:
+        if not row or len(row) < 3:
+            continue
+
+        var_name = row[0].strip()
+        var_type = row[1].strip()
+        source = row[2].strip()
+
+        if not var_name:
+            continue
+
+        # Build variable config
+        if var_type == "file":
+            variables[var_name] = {"type": "file", "path": source}
+        else:
+            variables[var_name] = {"type": "value", "value": source}
+
+    config["variables"] = variables
+    result = save_workspace_config(get_workspace_root(), config)
+
+    # Add count to status
+    if "✅" in result:
+        result = f"✅ Saved {len(variables)} variables to workspace config"
+
+    return result
+
+
 # ============================================================================
 # Section 3: Prompt Editor
 # ============================================================================
@@ -537,7 +575,7 @@ def create_ui():
                 headers=["Name", "Type", "Source"],
                 value=workspace_var_rows,
                 label="Defined Variables",
-                interactive=False,
+                interactive=True,
             )
 
             with gr.Row():
@@ -682,6 +720,13 @@ def create_ui():
                 var_table,
                 workspace_config_status,
             ],
+        )
+
+        # Auto-save when table is edited
+        var_table.change(
+            fn=save_variable_table_ui,
+            inputs=[var_table],
+            outputs=[workspace_config_status],
         )
 
         # Section 4: LLM Interaction

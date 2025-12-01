@@ -206,6 +206,47 @@ def refresh_workspace_config() -> tuple:
     return load_workspace_config_ui()
 
 
+def refresh_all_ui(prompt_dir: str, current_prompt_file: str) -> tuple:
+    """Comprehensive refresh: prompts, variables, preview, and validation."""
+    # Save the prompt directory to workspace config
+    config = load_workspace_config(get_workspace_root())
+    config["paths"]["prompts"] = prompt_dir
+    save_workspace_config(get_workspace_root(), config)
+
+    # Refresh the file list
+    files = list_prompt_files(get_workspace_root(), prompt_dir)
+    prompt_dropdown_update = gr.update(choices=["(none)"] + files if files else ["(none)"])
+
+    # Reload variables from disk
+    _, var_rows, _ = load_workspace_config_ui()
+
+    # If a prompt is selected, reload it and generate preview
+    if current_prompt_file and current_prompt_file != "(none)":
+        content = load_prompt_file(get_workspace_root(), prompt_dir, current_prompt_file)
+
+        # Extract variables and check mapping
+        variables = extract_variables(content)
+        workspace_vars = config.get("variables", {})
+        unmapped = [v for v in variables if v not in workspace_vars]
+
+        # Generate interpolated preview
+        interpolated, _ = interpolate_prompt(content, get_workspace_root(), workspace_vars)
+
+        # Build status message
+        if unmapped:
+            status = f"✅ Refreshed | ⚠️ Unmapped variables: {', '.join(unmapped)}"
+        elif variables:
+            status = f"✅ Refreshed | All variables mapped ({len(variables)}/{len(variables)})"
+        else:
+            status = f"✅ Refreshed | No variables found in prompt"
+
+        return prompt_dropdown_update, var_rows, content, interpolated, status
+    else:
+        # No prompt selected
+        status = f"✅ Refreshed | Found {len(files)} prompt files"
+        return prompt_dropdown_update, var_rows, "", "", status
+
+
 def save_variable_table_ui(var_rows) -> str:
     """Save variable table data back to workspace config."""
     import pandas as pd
@@ -520,19 +561,19 @@ def create_ui():
         with gr.Accordion("✏️ Prompt Editor & Variable Management", open=user_config_valid) as prompt_editor_section:
             gr.Markdown("### Edit Prompt Files")
 
-            with gr.Row():
-                prompt_dir_input = gr.Textbox(
-                    label="Prompts Directory",
-                    value=workspace_prompt_dir,
-                    placeholder="prompts",
-                    scale=3,
-                )
-                refresh_prompts_btn = gr.Button("🔄 Refresh", size="sm", scale=1)
-
-            prompt_file_dropdown = gr.Dropdown(
-                choices=get_available_prompts(),
-                label="Select Prompt File",
+            prompt_dir_input = gr.Textbox(
+                label="Prompts Directory",
+                value=workspace_prompt_dir,
+                placeholder="prompts",
             )
+
+            with gr.Row():
+                prompt_file_dropdown = gr.Dropdown(
+                    choices=get_available_prompts(),
+                    label="Select Prompt File",
+                    scale=4,
+                )
+                refresh_all_btn = gr.Button("🔄 Refresh All", size="sm", scale=1)
 
             with gr.Tabs():
                 with gr.Tab("Editor"):
@@ -554,9 +595,7 @@ def create_ui():
                         datatype=["str", ["value", "file"], "str"],
                     )
 
-                    with gr.Row():
-                        add_row_btn = gr.Button("➕ Add Row", size="sm")
-                        refresh_workspace_btn = gr.Button("🔄 Refresh from Disk", size="sm")
+                    add_row_btn = gr.Button("➕ Add Row", size="sm")
 
                 with gr.Tab("Interpolated Preview"):
                     prompt_preview = gr.Textbox(
@@ -662,11 +701,11 @@ def create_ui():
         )
 
         # Section 2: Prompt Editor & Variable Management
-        # Prompt Editor handlers
-        refresh_prompts_btn.click(
-            fn=refresh_prompt_list,
-            inputs=[prompt_dir_input],
-            outputs=[prompt_file_dropdown, combined_status],
+        # Comprehensive refresh button
+        refresh_all_btn.click(
+            fn=refresh_all_ui,
+            inputs=[prompt_dir_input, prompt_file_dropdown],
+            outputs=[prompt_file_dropdown, var_table, prompt_editor, prompt_preview, combined_status],
         )
 
         prompt_file_dropdown.change(
@@ -698,15 +737,6 @@ def create_ui():
             fn=add_variable_row_ui,
             inputs=[var_table],
             outputs=[var_table, combined_status],
-        )
-
-        refresh_workspace_btn.click(
-            fn=refresh_workspace_config,
-            outputs=[
-                prompt_dir_input,
-                var_table,
-                combined_status,
-            ],
         )
 
         # Auto-save when table is edited

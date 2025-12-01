@@ -565,14 +565,14 @@ def create_ui():
 
     with gr.Blocks(title="Prompt Engineer") as demo:
         gr.Markdown(f"# 🎯 Prompt Engineer\nWorkspace: `{get_workspace_root()}`")
-        gr.Markdown("CLI-based prompt engineering workbench for rapid iteration")
 
         # ====================================================================
         # Section 1: User Config
         # ====================================================================
 
-        with gr.Accordion("⚙️ User Configuration", open=not user_config_valid) as user_config_section:
-            gr.Markdown("### Provider Settings (saved to `~/.prompt-engineer/config.yaml`)")
+        with gr.Accordion("⚙️ Configuration", open=not user_config_valid) as user_config_section:
+            gr.Markdown("_(saved to `~/.prompt-engineer/config.yaml`)_")
+            gr.Markdown("### LLM Provider & Model Configuration")
 
             with gr.Row():
                 provider_dropdown = gr.Dropdown(
@@ -630,10 +630,10 @@ def create_ui():
                     label="Temperature",
                 )
                 default_max_tokens = gr.Slider(
-                    minimum=1,
-                    maximum=4000,
-                    value=user_config.get("defaults", {}).get("max_tokens", 2000),
-                    step=100,
+                    minimum=4000,
+                    maximum=256000,
+                    value=user_config.get("defaults", {}).get("max_tokens", 4000),
+                    step=1000,
                     label="Max Tokens",
                 )
 
@@ -647,8 +647,8 @@ def create_ui():
         # Load workspace config for initial values
         workspace_prompt_dir, workspace_var_rows, workspace_status_initial = load_workspace_config_ui()
 
-        with gr.Accordion("✏️ Prompt Editor & Variable Management", open=user_config_valid) as prompt_editor_section:
-            gr.Markdown("### Edit Prompt Files")
+        with gr.Accordion("✏️ Edit", open=user_config_valid) as prompt_editor_section:
+            gr.Markdown("### Edit Prompt & Variables")
 
             with gr.Row():
                 prompt_dir_input = gr.Textbox(
@@ -677,21 +677,18 @@ def create_ui():
                     save_prompt_btn = gr.Button("💾 Save Prompt", variant="primary", size="sm", interactive=False)
 
                 with gr.Tab("Variables", id="variables_tab"):
-                    gr.Markdown("Edit cells inline - changes auto-save. Delete variables by clearing the Name field.")
-
                     var_table = gr.Dataframe(
                         headers=["Name", "Type", "Source"],
                         value=workspace_var_rows,
-                        label="Defined Variables",
                         interactive=True,
                         datatype=["str", ["value", "file"], "str"],
                     )
 
                     add_row_btn = gr.Button("➕ Add Row", size="sm")
 
-                with gr.Tab("Interpolated Preview"):
+                with gr.Tab("Preview"):
                     prompt_preview = gr.Textbox(
-                        label="Interpolated Prompt (read-only preview)",
+                        label="Interpolated Preview (read-only)",
                         lines=15,
                         interactive=False,
                     )
@@ -717,8 +714,32 @@ def create_ui():
         # Section 3: LLM Interaction
         # ====================================================================
 
-        with gr.Accordion("🚀 LLM Interaction", open=False) as llm_section:
-            gr.Markdown("### Execute Prompts")
+        with gr.Accordion("🚀 Test", open=False) as llm_section:
+            gr.Markdown("### Test Prompts with LLM")
+
+            with gr.Accordion("🛠️ Options", open=False):
+                with gr.Row():
+                    model_override_dropdown = gr.Dropdown(
+                        choices=user_config.get("models", []),
+                        label="Model Override (leave empty to use default)",
+                        allow_custom_value=True,
+                    )
+
+                with gr.Row():
+                    temperature_slider = gr.Slider(
+                        minimum=0,
+                        maximum=2,
+                        value=user_config.get("defaults", {}).get("temperature", 0.7),
+                        step=0.1,
+                        label="Temperature",
+                    )
+                    max_tokens_slider = gr.Slider(
+                        minimum=4000,
+                        maximum=256000,
+                        value=user_config.get("defaults", {}).get("max_tokens", 4000),
+                        step=1000,
+                        label="Max Tokens",
+                    )
 
             with gr.Row():
                 system_prompt_dropdown = gr.Dropdown(
@@ -733,40 +754,16 @@ def create_ui():
                     scale=1,
                 )
 
-            with gr.Row():
-                model_override_dropdown = gr.Dropdown(
-                    choices=user_config.get("models", []),
-                    label="Model Override (leave empty to use default)",
-                    allow_custom_value=True,
-                )
-
-            with gr.Row():
-                temperature_slider = gr.Slider(
-                    minimum=0,
-                    maximum=2,
-                    value=user_config.get("defaults", {}).get("temperature", 0.7),
-                    step=0.1,
-                    label="Temperature",
-                )
-                max_tokens_slider = gr.Slider(
-                    minimum=1,
-                    maximum=4000,
-                    value=user_config.get("defaults", {}).get("max_tokens", 2000),
-                    step=100,
-                    label="Max Tokens",
-                )
 
             run_prompt_btn = gr.Button("🚀 Run Prompt", variant="primary", size="lg")
 
             with gr.Tabs():
-                with gr.Tab("Formatted Response"):
-                    formatted_response_md = gr.Markdown(label="Formatted Response", value="")
-
-                with gr.Tab("Raw Request"):
+                with gr.Tab("Request"):
                     raw_request_json = gr.JSON(label="Raw Request Payload", value={})
-
-                with gr.Tab("Raw Response"):
+                with gr.Tab("Response"):
                     raw_response_json = gr.JSON(label="Raw API Response", value={})
+                with gr.Tab("Output"):
+                    formatted_response_md = gr.Markdown(label="Formatted Response", value="")
 
             llm_status = gr.Textbox(label="Status", interactive=False)
 

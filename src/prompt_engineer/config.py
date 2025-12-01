@@ -84,7 +84,7 @@ def get_default_user_config() -> Dict[str, Any]:
         "defaults": {
             "model": "gpt-4o",
             "temperature": 0.7,
-            "max_tokens": 2000,
+            "max_tokens": 256000,
         },
         "presets": {
             "openai": {
@@ -100,7 +100,7 @@ def get_default_user_config() -> Dict[str, Any]:
             "lm-studio": {
                 "base_url": "http://localhost:1234/v1",
                 "api_key_required": False,
-                "default_models": [],
+                "default_models": ["gpt-oss"],
             },
             "openrouter": {
                 "base_url": "https://openrouter.ai/api/v1",

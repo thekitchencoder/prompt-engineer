@@ -518,48 +518,32 @@ def create_ui():
         workspace_prompt_dir, workspace_var_rows, workspace_status_initial = load_workspace_config_ui()
 
         with gr.Accordion("✏️ Prompt Editor & Variable Management", open=user_config_valid) as prompt_editor_section:
+            gr.Markdown("### Edit Prompt Files")
+
             with gr.Row():
-                # Left column: Prompt Editor
-                with gr.Column(scale=2):
-                    gr.Markdown("### Edit Prompt Files")
+                prompt_dir_input = gr.Textbox(
+                    label="Prompts Directory",
+                    value=workspace_prompt_dir,
+                    placeholder="prompts",
+                    scale=3,
+                )
+                refresh_prompts_btn = gr.Button("🔄 Refresh", size="sm", scale=1)
 
-                    with gr.Row():
-                        prompt_dir_input = gr.Textbox(
-                            label="Prompts Directory",
-                            value=workspace_prompt_dir,
-                            placeholder="prompts",
-                            scale=3,
-                        )
-                        refresh_prompts_btn = gr.Button("🔄 Refresh", size="sm", scale=1)
+            prompt_file_dropdown = gr.Dropdown(
+                choices=get_available_prompts(),
+                label="Select Prompt File",
+            )
 
-                    with gr.Row():
-                        prompt_file_dropdown = gr.Dropdown(
-                            choices=get_available_prompts(),
-                            label="Select Prompt File",
-                            scale=3,
-                        )
-                        save_prompt_btn = gr.Button("💾 Save", size="sm", scale=1)
+            with gr.Tabs():
+                with gr.Tab("Editor"):
+                    prompt_editor = gr.Textbox(
+                        label="Prompt Template (use {variable_name} syntax)",
+                        lines=15,
+                        placeholder="Enter your prompt template...\n\nExample:\nYou are a helpful assistant.\n\nUser question: {question}",
+                    )
+                    save_prompt_btn = gr.Button("💾 Save Prompt", variant="primary", size="sm")
 
-                    with gr.Tabs():
-                        with gr.Tab("Editor"):
-                            prompt_editor = gr.Textbox(
-                                label="Prompt Template (use {variable_name} syntax)",
-                                lines=15,
-                                placeholder="Enter your prompt template...\n\nExample:\nYou are a helpful assistant.\n\nUser question: {question}",
-                            )
-
-                        with gr.Tab("Interpolated Preview"):
-                            prompt_preview = gr.Textbox(
-                                label="Interpolated Prompt (read-only preview)",
-                                lines=15,
-                                interactive=False,
-                            )
-
-                    prompt_status = gr.Textbox(label="Status", interactive=False)
-
-                # Right column: Variable Management
-                with gr.Column(scale=1):
-                    gr.Markdown("### Variable Management")
+                with gr.Tab("Variables"):
                     gr.Markdown("Edit cells inline - changes auto-save. Delete variables by clearing the Name field.")
 
                     var_table = gr.Dataframe(
@@ -572,14 +556,22 @@ def create_ui():
 
                     with gr.Row():
                         add_row_btn = gr.Button("➕ Add Row", size="sm")
-                        refresh_workspace_btn = gr.Button("🔄 Refresh", size="sm")
+                        refresh_workspace_btn = gr.Button("🔄 Refresh from Disk", size="sm")
 
-                    workspace_config_status = gr.Textbox(
-                        label="Status",
-                        value=workspace_status_initial,
+                with gr.Tab("Interpolated Preview"):
+                    prompt_preview = gr.Textbox(
+                        label="Interpolated Prompt (read-only preview)",
+                        lines=15,
                         interactive=False,
-                        lines=2,
                     )
+
+            # Combined status area
+            combined_status = gr.Textbox(
+                label="Status",
+                value=workspace_status_initial,
+                interactive=False,
+                lines=2,
+            )
 
         # ====================================================================
         # Section 3: LLM Interaction
@@ -674,13 +666,13 @@ def create_ui():
         refresh_prompts_btn.click(
             fn=refresh_prompt_list,
             inputs=[prompt_dir_input],
-            outputs=[prompt_file_dropdown, prompt_status],
+            outputs=[prompt_file_dropdown, combined_status],
         )
 
         prompt_file_dropdown.change(
             fn=load_prompt_ui,
             inputs=[prompt_file_dropdown],
-            outputs=[prompt_editor, prompt_preview, prompt_status],
+            outputs=[prompt_editor, prompt_preview, combined_status],
         )
 
         prompt_editor.change(
@@ -692,20 +684,20 @@ def create_ui():
         prompt_editor.change(
             fn=validate_prompt_variables_ui,
             inputs=[prompt_editor],
-            outputs=[prompt_status],
+            outputs=[combined_status],
         )
 
         save_prompt_btn.click(
             fn=save_prompt_ui,
             inputs=[prompt_file_dropdown, prompt_editor],
-            outputs=[prompt_status],
+            outputs=[combined_status],
         )
 
         # Variable Management handlers
         add_row_btn.click(
             fn=add_variable_row_ui,
             inputs=[var_table],
-            outputs=[var_table, workspace_config_status],
+            outputs=[var_table, combined_status],
         )
 
         refresh_workspace_btn.click(
@@ -713,7 +705,7 @@ def create_ui():
             outputs=[
                 prompt_dir_input,
                 var_table,
-                workspace_config_status,
+                combined_status,
             ],
         )
 
@@ -721,7 +713,7 @@ def create_ui():
         var_table.change(
             fn=save_variable_table_ui,
             inputs=[var_table],
-            outputs=[workspace_config_status],
+            outputs=[combined_status],
         )
 
         # Section 3: LLM Interaction

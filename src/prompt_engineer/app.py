@@ -217,6 +217,9 @@ def refresh_all_ui(prompt_dir: str, current_prompt_file: str) -> tuple:
     files = list_prompt_files(get_workspace_root(), prompt_dir)
     prompt_dropdown_update = gr.update(choices=["(none)"] + files if files else ["(none)"])
 
+    # Also update LLM section dropdowns
+    llm_dropdown_update = gr.update(choices=["(none)"] + files if files else ["(none)"])
+
     # Reload variables from disk
     _, var_rows, _ = load_workspace_config_ui()
 
@@ -243,12 +246,12 @@ def refresh_all_ui(prompt_dir: str, current_prompt_file: str) -> tuple:
             status = f"✅ Refreshed | No variables found in prompt"
             button_state = gr.update(interactive=False)
 
-        return prompt_dropdown_update, var_rows, content, interpolated, status, button_state
+        return prompt_dropdown_update, llm_dropdown_update, llm_dropdown_update, var_rows, content, interpolated, status, button_state
     else:
         # No prompt selected
         status = f"✅ Refreshed | Found {len(files)} prompt files"
         button_state = gr.update(interactive=False)
-        return prompt_dropdown_update, var_rows, "", "", status, button_state
+        return prompt_dropdown_update, llm_dropdown_update, llm_dropdown_update, var_rows, "", "", status, button_state
 
 
 def save_variable_table_ui(var_rows) -> str:
@@ -388,11 +391,19 @@ def refresh_prompt_list(prompt_dir: str) -> tuple:
 
 def load_prompt_ui(filename: str) -> tuple:
     """Load prompt file into editor."""
-    if not filename:
-        return "", "", "⚠️ No file selected"
+    if not filename or filename == "(none)":
+        return "", "", "ℹ️ No file selected"
 
     config = load_workspace_config(get_workspace_root())
     prompt_dir = config.get("paths", {}).get("prompts", "prompts")
+
+    # Check if file exists first
+    from pathlib import Path
+    file_path = Path(get_workspace_root()) / prompt_dir / filename
+
+    if not file_path.exists():
+        # New file - return empty editor instead of error
+        return "", "", f"ℹ️ New file: {filename} (not yet saved)"
 
     content = load_prompt_file(get_workspace_root(), prompt_dir, filename)
 
@@ -413,16 +424,23 @@ def load_prompt_ui(filename: str) -> tuple:
     return content, interpolated, status
 
 
-def save_prompt_ui(filename: str, content: str) -> str:
-    """Save prompt file."""
+def save_prompt_ui(filename: str, content: str) -> tuple:
+    """Save prompt file and return updated dropdown choices."""
     # Validate filename
     if not filename or filename.strip() == "" or filename == "(none)":
-        return "❌ Please enter a valid filename (cannot be empty or '(none)')"
+        status = "❌ Please enter a valid filename (cannot be empty or '(none)')"
+        return status, gr.update(), gr.update(), gr.update()
 
     config = load_workspace_config(get_workspace_root())
     prompt_dir = config.get("paths", {}).get("prompts", "prompts")
 
-    return save_prompt_file(get_workspace_root(), prompt_dir, filename, content)
+    status = save_prompt_file(get_workspace_root(), prompt_dir, filename, content)
+
+    # Refresh dropdown choices to include newly saved file
+    files = list_prompt_files(get_workspace_root(), prompt_dir)
+    dropdown_update = gr.update(choices=["(none)"] + files if files else ["(none)"])
+
+    return status, dropdown_update, dropdown_update, dropdown_update
 
 
 def update_interpolated_preview(content: str) -> str:
@@ -788,7 +806,7 @@ def create_ui():
         refresh_all_btn.click(
             fn=refresh_all_ui,
             inputs=[prompt_dir_input, prompt_file_dropdown],
-            outputs=[prompt_file_dropdown, var_table, prompt_editor, prompt_preview, combined_status, add_unmapped_btn],
+            outputs=[prompt_file_dropdown, system_prompt_dropdown, user_prompt_dropdown, var_table, prompt_editor, prompt_preview, combined_status, add_unmapped_btn],
         ).then(
             fn=lambda x: x,  # Update original state after refresh
             inputs=[prompt_editor],
@@ -836,7 +854,7 @@ def create_ui():
         save_prompt_btn.click(
             fn=save_prompt_ui,
             inputs=[prompt_file_dropdown, prompt_editor],
-            outputs=[combined_status],
+            outputs=[combined_status, prompt_file_dropdown, system_prompt_dropdown, user_prompt_dropdown],
         ).then(
             fn=lambda x: x,  # Update original state to match saved content
             inputs=[prompt_editor],

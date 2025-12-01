@@ -120,8 +120,8 @@ def save_user_config_ui(
     default_model: str,
     temperature: float,
     max_tokens: int,
-) -> str:
-    """Save user configuration."""
+) -> tuple:
+    """Save user configuration and return values to sync LLM test section."""
     config = load_user_config()
 
     config["provider"] = provider
@@ -132,7 +132,15 @@ def save_user_config_ui(
     config["defaults"]["temperature"] = temperature
     config["defaults"]["max_tokens"] = max_tokens
 
-    return save_user_config(config)
+    status = save_user_config(config)
+
+    # Return status and values to sync LLM test section
+    return (
+        status,
+        gr.update(choices=models, value=""),  # model_override_dropdown
+        gr.update(value=temperature),  # temperature_slider
+        gr.update(value=max_tokens),  # max_tokens_slider
+    )
 
 
 # ============================================================================
@@ -850,7 +858,7 @@ def create_ui():
                 default_temperature,
                 default_max_tokens,
             ],
-            outputs=[user_config_status],
+            outputs=[user_config_status, model_override_dropdown, temperature_slider, max_tokens_slider],
         )
 
         # Section 2: Prompt Editor & Variable Management

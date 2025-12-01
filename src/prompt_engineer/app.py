@@ -357,6 +357,14 @@ def check_unmapped_variables(prompt_content: str) -> tuple:
     return status, button_state
 
 
+def check_prompt_changes(current_content: str, original_content: str) -> dict:
+    """Check if prompt has been modified and return save button state."""
+    if current_content != original_content:
+        return gr.update(interactive=True)
+    else:
+        return gr.update(interactive=False)
+
+
 # ============================================================================
 # Section 3: Prompt Editor
 # ============================================================================
@@ -633,6 +641,9 @@ def create_ui():
                     scale=1,
                 )
 
+            # Hidden state to track original prompt content
+            original_prompt_state = gr.State(value="")
+
             with gr.Tabs() as tabs:
                 with gr.Tab("Editor"):
                     prompt_editor = gr.Textbox(
@@ -640,7 +651,7 @@ def create_ui():
                         lines=15,
                         placeholder="Enter your prompt template...\n\nExample:\nYou are a helpful assistant.\n\nUser question: {question}",
                     )
-                    save_prompt_btn = gr.Button("💾 Save Prompt", variant="primary", size="sm")
+                    save_prompt_btn = gr.Button("💾 Save Prompt", variant="primary", size="sm", interactive=False)
 
                 with gr.Tab("Variables", id="variables_tab"):
                     gr.Markdown("Edit cells inline - changes auto-save. Delete variables by clearing the Name field.")
@@ -773,6 +784,13 @@ def create_ui():
             fn=refresh_all_ui,
             inputs=[prompt_dir_input, prompt_file_dropdown],
             outputs=[prompt_file_dropdown, var_table, prompt_editor, prompt_preview, combined_status, add_unmapped_btn],
+        ).then(
+            fn=lambda x: x,  # Update original state after refresh
+            inputs=[prompt_editor],
+            outputs=[original_prompt_state],
+        ).then(
+            fn=lambda: gr.update(interactive=False),  # Disable save button after refresh
+            outputs=[save_prompt_btn],
         )
 
         prompt_file_dropdown.change(
@@ -780,9 +798,16 @@ def create_ui():
             inputs=[prompt_file_dropdown],
             outputs=[prompt_editor, prompt_preview, combined_status],
         ).then(
+            fn=lambda x: x,  # Copy editor content to original state
+            inputs=[prompt_editor],
+            outputs=[original_prompt_state],
+        ).then(
             fn=check_unmapped_variables,
             inputs=[prompt_editor],
             outputs=[combined_status, add_unmapped_btn],
+        ).then(
+            fn=lambda: gr.update(interactive=False),  # Disable save button after loading
+            outputs=[save_prompt_btn],
         )
 
         prompt_editor.change(
@@ -797,10 +822,23 @@ def create_ui():
             outputs=[combined_status, add_unmapped_btn],
         )
 
+        prompt_editor.change(
+            fn=check_prompt_changes,
+            inputs=[prompt_editor, original_prompt_state],
+            outputs=[save_prompt_btn],
+        )
+
         save_prompt_btn.click(
             fn=save_prompt_ui,
             inputs=[prompt_file_dropdown, prompt_editor],
             outputs=[combined_status],
+        ).then(
+            fn=lambda x: x,  # Update original state to match saved content
+            inputs=[prompt_editor],
+            outputs=[original_prompt_state],
+        ).then(
+            fn=lambda: gr.update(interactive=False),  # Disable save button after saving
+            outputs=[save_prompt_btn],
         )
 
         # Variable Management handlers

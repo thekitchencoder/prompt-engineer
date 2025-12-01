@@ -102,11 +102,21 @@ prompt-engineer/
 
 **4. app.py - Gradio UI (4 Accordion Sections)**
 
+Key UI Functions:
+- `check_user_config_changes()`: Detects changes in user config fields for button state
+- `save_user_config_ui()`: Saves config and syncs LLM test section controls
+- `prepare_request_ui()`: Builds request payload and displays immediately
+- `execute_request_ui()`: Executes LLM API call and displays response
+- `check_prompt_changes()`: Detects changes in prompt editor for button state
+- `refresh_all_ui()`: Comprehensive refresh of prompts, variables, and validation
+
 **Section 1: User Configuration**
 - Provider dropdown (presets)
 - API key and base URL inputs
 - Load models from provider
 - Model selection and defaults (temperature, max_tokens)
+- Save button with change tracking (disabled when no changes made)
+- Auto-syncs LLM test section when saved
 - Save to `~/.prompt-engineer/config.yaml`
 - Auto-collapses if config exists
 
@@ -127,9 +137,12 @@ prompt-engineer/
 **Section 4: LLM Interaction**
 - System prompt dropdown (optional)
 - User prompt dropdown (required)
-- Model override
-- Temperature/max_tokens sliders
-- Tabs: Formatted Response | Raw Request | Raw Response
+- Model, temperature, max_tokens (synced from user config defaults)
+- Tabs: Request | Response | Output
+  - **Request**: Raw JSON payload displayed immediately on button click
+  - **Response**: Complete API response (shown after completion)
+  - **Output**: Formatted markdown with syntax highlighting
+- Two-phase execution: prepare request (instant) → execute API call (async)
 - Status: tokens, cost, timing
 
 ### Configuration Files
@@ -193,9 +206,18 @@ variables:
 ### Gradio UI Patterns
 - **Gradio 6**: Uses Gradio 6 (theme passed to `.launch()`, not `Blocks()`)
 - Uses Accordion components for collapsible sections
-- Tabs for different views (Editor/Preview, Formatted/Raw)
+- Tabs for different views (Editor/Preview, Request/Response/Output)
 - Real-time updates via `.change()` event handlers
 - Status bars for validation feedback
+- **Change tracking pattern**: Save buttons use hidden state to track original values
+  - Buttons start disabled (no changes)
+  - Enable when current values differ from original
+  - Disable after successful save
+  - Used in: User Config section, Prompt Editor section
+- **Two-phase execution**: LLM interaction splits prepare/execute for immediate feedback
+  - Phase 1: Build and display request payload immediately
+  - Phase 2: Execute API call and display response asynchronously
+  - Chained via `.then()` in event handlers
 
 ### Error Handling
 - Config validation before save
@@ -204,6 +226,13 @@ variables:
 - API error messages with helpful context
 
 ## Common Modification Patterns
+
+### Understanding Config Synchronization
+The app maintains sync between User Config (Section 1) and LLM Test section (Section 4):
+- When user config is saved, LLM test controls update to match new defaults
+- Model dropdown, temperature slider, and max_tokens slider all sync
+- This eliminates the need for page reload to see config changes
+- Implementation: `save_user_config_ui()` returns `gr.update()` objects for all synced controls
 
 ### Adding a New Provider Preset
 Edit `config.py` → `get_default_user_config()` → `presets` dict:
@@ -225,6 +254,47 @@ Edit `app.py` → `create_ui()`:
 - Accordions are defined with `gr.Accordion()`
 - Event handlers are wired at the end of each section
 - Use `.change()`, `.click()`, etc. for reactivity
+
+### Implementing Change Tracking for Save Buttons
+To add change tracking to a new save button (pattern used in User Config & Prompt Editor):
+
+1. Create a hidden state to track original values:
+   ```python
+   original_state = gr.State(value=initial_values)
+   ```
+
+2. Initialize save button as disabled:
+   ```python
+   save_btn = gr.Button("Save", interactive=False)
+   ```
+
+3. Create a check function that compares current vs original:
+   ```python
+   def check_changes(current_val, original_val):
+       return gr.update(interactive=(current_val != original_val))
+   ```
+
+4. Wire change handlers to all input fields:
+   ```python
+   for component in [field1, field2, field3]:
+       component.change(
+           fn=check_changes,
+           inputs=[field1, field2, field3, original_state],
+           outputs=[save_btn],
+           show_progress="hidden"
+       )
+   ```
+
+5. Update state and disable button after save:
+   ```python
+   save_btn.click(fn=save_function, ...).then(
+       fn=lambda: new_values.copy(),
+       outputs=[original_state]
+   ).then(
+       fn=lambda: gr.update(interactive=False),
+       outputs=[save_btn]
+   )
+   ```
 
 ### Adding New LLM Provider Support
 Edit `llm.py`:

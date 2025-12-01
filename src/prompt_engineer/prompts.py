@@ -6,18 +6,36 @@ from typing import List, Dict, Any, Tuple
 
 
 def list_prompt_files(workspace_root: str, prompt_dir: str) -> List[str]:
-    """List all prompt files in the prompt directory."""
+    """List all prompt files in the prompt directory, including nested subdirectories."""
     prompt_path = Path(workspace_root) / prompt_dir
 
     if not prompt_path.exists():
         return []
 
-    # Find all files (any extension), excluding directories and hidden files
-    files = sorted([
-        f.name for f in prompt_path.iterdir()
-        if f.is_file() and not f.name.startswith('.')
-    ])
-    return files
+    # Find all files recursively (any extension), excluding hidden files/directories
+    files = []
+    for file_path in prompt_path.rglob('*'):
+        # Skip if it's a directory or hidden (file or any parent directory)
+        if file_path.is_dir():
+            continue
+
+        # Check if file or any parent directory is hidden
+        is_hidden = any(part.startswith('.') for part in file_path.relative_to(prompt_path).parts)
+        if is_hidden:
+            continue
+
+        # Get relative path from prompt directory
+        relative_path = file_path.relative_to(prompt_path)
+        # Use forward slashes for consistency across platforms
+        files.append(str(relative_path).replace('\\', '/'))
+
+    # Sort with root-level files first, then nested files
+    # Sort key: (depth, filename) where depth=0 for root, depth=1+ for nested
+    def sort_key(filepath: str) -> tuple:
+        depth = 0 if '/' not in filepath else 1
+        return (depth, filepath)
+
+    return sorted(files, key=sort_key)
 
 
 def load_prompt_file(workspace_root: str, prompt_dir: str, filename: str) -> str:
@@ -38,15 +56,16 @@ def load_prompt_file(workspace_root: str, prompt_dir: str, filename: str) -> str
 
 
 def save_prompt_file(workspace_root: str, prompt_dir: str, filename: str, content: str) -> str:
-    """Save content to a prompt file."""
+    """Save content to a prompt file, creating parent directories if needed."""
     if not filename:
         return "❌ Please provide a filename"
 
     try:
         prompt_path = Path(workspace_root) / prompt_dir
-        prompt_path.mkdir(parents=True, exist_ok=True)
-
         file_path = prompt_path / filename
+
+        # Create parent directories if needed (for nested files)
+        file_path.parent.mkdir(parents=True, exist_ok=True)
 
         with open(file_path, 'w') as f:
             f.write(content)

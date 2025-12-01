@@ -185,34 +185,187 @@ def save_workspace_config_ui(
     return save_workspace_config(get_workspace_root(), config)
 
 
-def add_variable_ui(var_name: str, var_type: str, var_source: str) -> tuple:
-    """Add a new variable to workspace config."""
-    if not var_name:
-        return [], "⚠️ Variable name required"
+def add_variable_row_ui(var_rows) -> tuple:
+    """Add a new empty row to the variable table."""
+    import pandas as pd
 
-    config = load_workspace_config(get_workspace_root())
-    variables = config.get("variables", {})
-
-    # Add variable
-    if var_type == "file":
-        variables[var_name] = {"type": "file", "path": var_source}
+    # Handle pandas DataFrame from Gradio
+    if isinstance(var_rows, pd.DataFrame):
+        var_list = var_rows.values.tolist() if not var_rows.empty else []
     else:
-        variables[var_name] = {"type": "value", "value": var_source}
+        var_list = var_rows if var_rows else []
 
-    config["variables"] = variables
+    # Add new empty row
+    var_list.append(["", "value", ""])
 
-    # Save
-    result = save_workspace_config(get_workspace_root(), config)
-
-    # Reload table
-    _, _, _, var_rows, status = load_workspace_config_ui()
-
-    return var_rows, result
+    return var_list, "ℹ️ New row added - edit inline and it will auto-save"
 
 
 def refresh_workspace_config() -> tuple:
     """Reload workspace config from disk."""
     return load_workspace_config_ui()
+
+
+def refresh_all_ui(prompt_dir: str, current_prompt_file: str) -> tuple:
+    """Comprehensive refresh: prompts, variables, preview, and validation."""
+    # Save the prompt directory to workspace config
+    config = load_workspace_config(get_workspace_root())
+    config["paths"]["prompts"] = prompt_dir
+    save_workspace_config(get_workspace_root(), config)
+
+    # Refresh the file list
+    files = list_prompt_files(get_workspace_root(), prompt_dir)
+    prompt_dropdown_update = gr.update(choices=["(none)"] + files if files else ["(none)"])
+
+    # Also update LLM section dropdowns
+    llm_dropdown_update = gr.update(choices=["(none)"] + files if files else ["(none)"])
+
+    # Reload variables from disk
+    _, var_rows, _ = load_workspace_config_ui()
+
+    # If a prompt is selected, reload it and generate preview
+    if current_prompt_file and current_prompt_file != "(none)":
+        content = load_prompt_file(get_workspace_root(), prompt_dir, current_prompt_file)
+
+        # Extract variables and check mapping
+        variables = extract_variables(content)
+        workspace_vars = config.get("variables", {})
+        unmapped = [v for v in variables if v not in workspace_vars]
+
+        # Generate interpolated preview
+        interpolated, _ = interpolate_prompt(content, get_workspace_root(), workspace_vars)
+
+        # Build status message and button state
+        if unmapped:
+            status = f"✅ Refreshed | ⚠️ Unmapped variables: {', '.join(unmapped)}"
+            button_state = gr.update(interactive=True)
+        elif variables:
+            status = f"✅ Refreshed | All variables mapped ({len(variables)}/{len(variables)})"
+            button_state = gr.update(interactive=False)
+        else:
+            status = f"✅ Refreshed | No variables found in prompt"
+            button_state = gr.update(interactive=False)
+
+        return prompt_dropdown_update, llm_dropdown_update, llm_dropdown_update, var_rows, content, interpolated, status, button_state
+    else:
+        # No prompt selected
+        status = f"✅ Refreshed | Found {len(files)} prompt files"
+        button_state = gr.update(interactive=False)
+        return prompt_dropdown_update, llm_dropdown_update, llm_dropdown_update, var_rows, "", "", status, button_state
+
+
+def save_variable_table_ui(var_rows) -> str:
+    """Save variable table data back to workspace config."""
+    import pandas as pd
+
+    # Handle pandas DataFrame from Gradio
+    if isinstance(var_rows, pd.DataFrame):
+        if var_rows.empty:
+            # Empty table - clear all variables
+            config = load_workspace_config(get_workspace_root())
+            config["variables"] = {}
+            return save_workspace_config(get_workspace_root(), config)
+
+        # Convert DataFrame to list of lists
+        var_rows = var_rows.values.tolist()
+    elif not var_rows:
+        # Empty list - clear all variables
+        config = load_workspace_config(get_workspace_root())
+        config["variables"] = {}
+        return save_workspace_config(get_workspace_root(), config)
+
+    config = load_workspace_config(get_workspace_root())
+    variables = {}
+
+    for row in var_rows:
+        if not row or len(row) < 3:
+            continue
+
+        # Convert to string and handle None values
+        var_name = str(row[0]).strip() if row[0] is not None else ""
+        var_type = str(row[1]).strip() if row[1] is not None else ""
+        source = str(row[2]).strip() if row[2] is not None else ""
+
+        if not var_name:
+            continue
+
+        # Build variable config
+        if var_type == "file":
+            variables[var_name] = {"type": "file", "path": source}
+        else:
+            variables[var_name] = {"type": "value", "value": source}
+
+    config["variables"] = variables
+    result = save_workspace_config(get_workspace_root(), config)
+
+    # Add count to status
+    if "✅" in result:
+        result = f"✅ Saved {len(variables)} variables to workspace config"
+
+    return result
+
+
+def add_unmapped_variables_ui(prompt_content: str, var_rows) -> tuple:
+    """Add all unmapped variables from the prompt to the variables table."""
+    import pandas as pd
+
+    # Handle pandas DataFrame from Gradio
+    if isinstance(var_rows, pd.DataFrame):
+        var_list = var_rows.values.tolist() if not var_rows.empty else []
+    else:
+        var_list = var_rows if var_rows else []
+
+    # Extract variables from prompt
+    variables = extract_variables(prompt_content)
+    config = load_workspace_config(get_workspace_root())
+    workspace_vars = config.get("variables", {})
+
+    # Find unmapped variables
+    unmapped = [v for v in variables if v not in workspace_vars]
+
+    if not unmapped:
+        return var_list, "ℹ️ No unmapped variables to add", gr.update(interactive=False), gr.Tabs()
+
+    # Add unmapped variables as new rows
+    for var_name in unmapped:
+        var_list.append([var_name, "value", ""])
+
+    status = f"✅ Added {len(unmapped)} unmapped variable(s): {', '.join(unmapped)}"
+
+    # Disable button after adding and switch to Variables tab
+    return var_list, status, gr.update(interactive=False), gr.Tabs(selected="variables_tab")
+
+
+def check_unmapped_variables(prompt_content: str) -> tuple:
+    """Check if there are unmapped variables and return status + button state."""
+    if not prompt_content:
+        return "ℹ️ No prompt loaded", gr.update(interactive=False)
+
+    variables = extract_variables(prompt_content)
+    config = load_workspace_config(get_workspace_root())
+    workspace_vars = config.get("variables", {})
+
+    unmapped = [v for v in variables if v not in workspace_vars]
+
+    if unmapped:
+        status = f"⚠️ Unmapped variables: {', '.join(unmapped)}"
+        button_state = gr.update(interactive=True)
+    elif variables:
+        status = f"✅ All variables mapped ({len(variables)}/{len(variables)})"
+        button_state = gr.update(interactive=False)
+    else:
+        status = "ℹ️ No variables found"
+        button_state = gr.update(interactive=False)
+
+    return status, button_state
+
+
+def check_prompt_changes(current_content: str, original_content: str) -> dict:
+    """Check if prompt has been modified and return save button state."""
+    if current_content != original_content:
+        return gr.update(interactive=True)
+    else:
+        return gr.update(interactive=False)
 
 
 # ============================================================================
@@ -238,11 +391,19 @@ def refresh_prompt_list(prompt_dir: str) -> tuple:
 
 def load_prompt_ui(filename: str) -> tuple:
     """Load prompt file into editor."""
-    if not filename:
-        return "", "", "⚠️ No file selected"
+    if not filename or filename == "(none)":
+        return "", "", "ℹ️ No file selected"
 
     config = load_workspace_config(get_workspace_root())
     prompt_dir = config.get("paths", {}).get("prompts", "prompts")
+
+    # Check if file exists first
+    from pathlib import Path
+    file_path = Path(get_workspace_root()) / prompt_dir / filename
+
+    if not file_path.exists():
+        # New file - return empty editor instead of error
+        return "", "", f"ℹ️ New file: {filename} (not yet saved)"
 
     content = load_prompt_file(get_workspace_root(), prompt_dir, filename)
 
@@ -263,12 +424,23 @@ def load_prompt_ui(filename: str) -> tuple:
     return content, interpolated, status
 
 
-def save_prompt_ui(filename: str, content: str) -> str:
-    """Save prompt file."""
+def save_prompt_ui(filename: str, content: str) -> tuple:
+    """Save prompt file and return updated dropdown choices."""
+    # Validate filename
+    if not filename or filename.strip() == "" or filename == "(none)":
+        status = "❌ Please enter a valid filename (cannot be empty or '(none)')"
+        return status, gr.update(), gr.update(), gr.update()
+
     config = load_workspace_config(get_workspace_root())
     prompt_dir = config.get("paths", {}).get("prompts", "prompts")
 
-    return save_prompt_file(get_workspace_root(), prompt_dir, filename, content)
+    status = save_prompt_file(get_workspace_root(), prompt_dir, filename, content)
+
+    # Refresh dropdown choices to include newly saved file
+    files = list_prompt_files(get_workspace_root(), prompt_dir)
+    dropdown_update = gr.update(choices=["(none)"] + files if files else ["(none)"])
+
+    return status, dropdown_update, dropdown_update, dropdown_update
 
 
 def update_interpolated_preview(content: str) -> str:
@@ -393,14 +565,14 @@ def create_ui():
 
     with gr.Blocks(title="Prompt Engineer") as demo:
         gr.Markdown(f"# 🎯 Prompt Engineer\nWorkspace: `{get_workspace_root()}`")
-        gr.Markdown("CLI-based prompt engineering workbench for rapid iteration")
 
         # ====================================================================
         # Section 1: User Config
         # ====================================================================
 
-        with gr.Accordion("⚙️ User Configuration", open=not user_config_valid) as user_config_section:
-            gr.Markdown("### Provider Settings (saved to `~/.prompt-engineer/config.yaml`)")
+        with gr.Accordion("⚙️ Configuration", open=not user_config_valid) as user_config_section:
+            gr.Markdown("_(saved to `~/.prompt-engineer/config.yaml`)_")
+            gr.Markdown("### LLM Provider & Model Configuration")
 
             with gr.Row():
                 provider_dropdown = gr.Dropdown(
@@ -458,10 +630,10 @@ def create_ui():
                     label="Temperature",
                 )
                 default_max_tokens = gr.Slider(
-                    minimum=1,
-                    maximum=4000,
-                    value=user_config.get("defaults", {}).get("max_tokens", 2000),
-                    step=100,
+                    minimum=4000,
+                    maximum=256000,
+                    value=user_config.get("defaults", {}).get("max_tokens", 4000),
+                    step=1000,
                     label="Max Tokens",
                 )
 
@@ -469,92 +641,105 @@ def create_ui():
             user_config_status = gr.Textbox(label="Status", lines=2)
 
         # ====================================================================
-        # Section 2: Prompt Editor
+        # Section 2: Prompt Editor & Variable Management
         # ====================================================================
 
         # Load workspace config for initial values
         workspace_prompt_dir, workspace_var_rows, workspace_status_initial = load_workspace_config_ui()
 
-        with gr.Accordion("✏️ Prompt Editor", open=user_config_valid) as prompt_editor_section:
-            gr.Markdown("### Edit Prompt Files")
+        with gr.Accordion("✏️ Edit", open=user_config_valid) as prompt_editor_section:
+            gr.Markdown("### Edit Prompt & Variables")
 
             with gr.Row():
                 prompt_dir_input = gr.Textbox(
                     label="Prompts Directory",
                     value=workspace_prompt_dir,
                     placeholder="prompts",
-                    scale=3,
+                    scale=1,
                 )
-                refresh_prompts_btn = gr.Button("🔄 Refresh List", size="sm", scale=1)
-
-            with gr.Row():
                 prompt_file_dropdown = gr.Dropdown(
                     choices=get_available_prompts(),
-                    label="Select Prompt File",
-                    scale=3,
+                    label="Select Prompt File (or type new filename)",
+                    scale=1,
+                    allow_custom_value=True,
                 )
-                save_prompt_btn = gr.Button("💾 Save", size="sm", scale=1)
 
-            with gr.Tabs():
+            # Hidden state to track original prompt content
+            original_prompt_state = gr.State(value="")
+
+            with gr.Tabs() as tabs:
                 with gr.Tab("Editor"):
                     prompt_editor = gr.Textbox(
                         label="Prompt Template (use {variable_name} syntax)",
                         lines=15,
                         placeholder="Enter your prompt template...\n\nExample:\nYou are a helpful assistant.\n\nUser question: {question}",
                     )
+                    save_prompt_btn = gr.Button("💾 Save Prompt", variant="primary", size="sm", interactive=False)
 
-                with gr.Tab("Interpolated Preview"):
+                with gr.Tab("Variables", id="variables_tab"):
+                    var_table = gr.Dataframe(
+                        headers=["Name", "Type", "Source"],
+                        value=workspace_var_rows,
+                        interactive=True,
+                        datatype=["str", ["value", "file"], "str"],
+                    )
+
+                    add_row_btn = gr.Button("➕ Add Row", size="sm")
+
+                with gr.Tab("Preview"):
                     prompt_preview = gr.Textbox(
-                        label="Interpolated Prompt (read-only preview)",
+                        label="Interpolated Preview (read-only)",
                         lines=15,
                         interactive=False,
                     )
 
-            prompt_status = gr.Textbox(label="Status", interactive=False)
-
-        # ====================================================================
-        # Section 3: Workspace Config
-        # ====================================================================
-
-        with gr.Accordion("📁 Workspace Configuration", open=False) as workspace_config_section:
-            gr.Markdown(f"### Workspace Settings (saved to `{get_workspace_root()}/.prompt-engineer/workspace.yaml`)")
-
-            gr.Markdown("### Variable Mappings")
-
-            with gr.Row():
-                var_name_input = gr.Textbox(label="Variable Name", scale=2, placeholder="my_variable")
-                var_type_radio = gr.Radio(["file", "value"], label="Type", value="value", scale=1)
-
-            var_source_input = gr.Textbox(
-                label="File Path (relative to workspace) or Value",
-                lines=3,
-                placeholder="prompt-data/my-file.txt or inline text value",
+            # Status feedback (always visible below tabs)
+            combined_status = gr.Textbox(
+                label="Status",
+                value=workspace_status_initial,
+                interactive=False,
+                lines=2,
             )
 
-            add_var_btn = gr.Button("➕ Add Variable", size="sm")
-
-            var_table = gr.Dataframe(
-                headers=["Name", "Type", "Source"],
-                value=workspace_var_rows,
-                label="Defined Variables",
+            add_unmapped_btn = gr.Button(
+                "➕ Add All Unmapped Variables",
+                variant="secondary",
+                size="sm",
                 interactive=False,
             )
 
-            with gr.Row():
-                refresh_workspace_btn = gr.Button("🔄 Refresh from Disk", size="sm")
-                workspace_config_status = gr.Textbox(
-                    label="Status",
-                    value=workspace_status_initial,
-                    interactive=False,
-                    lines=3,
-                )
+            refresh_all_btn = gr.Button("🔄 Refresh All", variant="secondary", size="sm")
 
         # ====================================================================
-        # Section 4: LLM Interaction
+        # Section 3: LLM Interaction
         # ====================================================================
 
-        with gr.Accordion("🚀 LLM Interaction", open=False) as llm_section:
-            gr.Markdown("### Execute Prompts")
+        with gr.Accordion("🚀 Test", open=False) as llm_section:
+            gr.Markdown("### Test Prompts with LLM")
+
+            with gr.Accordion("🛠️ Options", open=False):
+                with gr.Row():
+                    model_override_dropdown = gr.Dropdown(
+                        choices=user_config.get("models", []),
+                        label="Model Override (leave empty to use default)",
+                        allow_custom_value=True,
+                    )
+
+                with gr.Row():
+                    temperature_slider = gr.Slider(
+                        minimum=0,
+                        maximum=2,
+                        value=user_config.get("defaults", {}).get("temperature", 0.7),
+                        step=0.1,
+                        label="Temperature",
+                    )
+                    max_tokens_slider = gr.Slider(
+                        minimum=4000,
+                        maximum=256000,
+                        value=user_config.get("defaults", {}).get("max_tokens", 4000),
+                        step=1000,
+                        label="Max Tokens",
+                    )
 
             with gr.Row():
                 system_prompt_dropdown = gr.Dropdown(
@@ -569,40 +754,16 @@ def create_ui():
                     scale=1,
                 )
 
-            with gr.Row():
-                model_override_dropdown = gr.Dropdown(
-                    choices=user_config.get("models", []),
-                    label="Model Override (leave empty to use default)",
-                    allow_custom_value=True,
-                )
-
-            with gr.Row():
-                temperature_slider = gr.Slider(
-                    minimum=0,
-                    maximum=2,
-                    value=user_config.get("defaults", {}).get("temperature", 0.7),
-                    step=0.1,
-                    label="Temperature",
-                )
-                max_tokens_slider = gr.Slider(
-                    minimum=1,
-                    maximum=4000,
-                    value=user_config.get("defaults", {}).get("max_tokens", 2000),
-                    step=100,
-                    label="Max Tokens",
-                )
 
             run_prompt_btn = gr.Button("🚀 Run Prompt", variant="primary", size="lg")
 
             with gr.Tabs():
-                with gr.Tab("Formatted Response"):
-                    formatted_response_md = gr.Markdown(label="Formatted Response", value="")
-
-                with gr.Tab("Raw Request"):
+                with gr.Tab("Request"):
                     raw_request_json = gr.JSON(label="Raw Request Payload", value={})
-
-                with gr.Tab("Raw Response"):
+                with gr.Tab("Response"):
                     raw_response_json = gr.JSON(label="Raw API Response", value={})
+                with gr.Tab("Output"):
+                    formatted_response_md = gr.Markdown(label="Formatted Response", value="")
 
             llm_status = gr.Textbox(label="Status", interactive=False)
 
@@ -637,54 +798,93 @@ def create_ui():
             outputs=[user_config_status],
         )
 
-        # Section 2: Prompt Editor
-        refresh_prompts_btn.click(
-            fn=refresh_prompt_list,
-            inputs=[prompt_dir_input],
-            outputs=[prompt_file_dropdown, prompt_status],
+        # Section 2: Prompt Editor & Variable Management
+        # Comprehensive refresh button
+        refresh_all_btn.click(
+            fn=refresh_all_ui,
+            inputs=[prompt_dir_input, prompt_file_dropdown],
+            outputs=[prompt_file_dropdown, system_prompt_dropdown, user_prompt_dropdown, var_table, prompt_editor, prompt_preview, combined_status, add_unmapped_btn],
+        ).then(
+            fn=lambda x: x,  # Update original state after refresh
+            inputs=[prompt_editor],
+            outputs=[original_prompt_state],
+        ).then(
+            fn=lambda: gr.update(interactive=False),  # Disable save button after refresh
+            outputs=[save_prompt_btn],
         )
 
         prompt_file_dropdown.change(
             fn=load_prompt_ui,
             inputs=[prompt_file_dropdown],
-            outputs=[prompt_editor, prompt_preview, prompt_status],
+            outputs=[prompt_editor, prompt_preview, combined_status],
+        ).then(
+            fn=lambda x: x,  # Copy editor content to original state
+            inputs=[prompt_editor],
+            outputs=[original_prompt_state],
+        ).then(
+            fn=check_unmapped_variables,
+            inputs=[prompt_editor],
+            outputs=[combined_status, add_unmapped_btn],
+        ).then(
+            fn=lambda: gr.update(interactive=False),  # Disable save button after loading
+            outputs=[save_prompt_btn],
         )
 
         prompt_editor.change(
             fn=update_interpolated_preview,
             inputs=[prompt_editor],
             outputs=[prompt_preview],
-        )
-
-        prompt_editor.change(
-            fn=validate_prompt_variables_ui,
+            show_progress="hidden",
+        ).then(
+            fn=check_unmapped_variables,
             inputs=[prompt_editor],
-            outputs=[prompt_status],
+            outputs=[combined_status, add_unmapped_btn],
+            show_progress="hidden",
+        ).then(
+            fn=check_prompt_changes,
+            inputs=[prompt_editor, original_prompt_state],
+            outputs=[save_prompt_btn],
+            show_progress="hidden",
         )
 
         save_prompt_btn.click(
             fn=save_prompt_ui,
             inputs=[prompt_file_dropdown, prompt_editor],
-            outputs=[prompt_status],
+            outputs=[combined_status, prompt_file_dropdown, system_prompt_dropdown, user_prompt_dropdown],
+        ).then(
+            fn=lambda x: x,  # Update original state to match saved content
+            inputs=[prompt_editor],
+            outputs=[original_prompt_state],
+        ).then(
+            fn=lambda: gr.update(interactive=False),  # Disable save button after saving
+            outputs=[save_prompt_btn],
         )
 
-        # Section 3: Workspace Config
-        add_var_btn.click(
-            fn=add_variable_ui,
-            inputs=[var_name_input, var_type_radio, var_source_input],
-            outputs=[var_table, workspace_config_status],
+        # Variable Management handlers
+        add_row_btn.click(
+            fn=add_variable_row_ui,
+            inputs=[var_table],
+            outputs=[var_table, combined_status],
         )
 
-        refresh_workspace_btn.click(
-            fn=refresh_workspace_config,
-            outputs=[
-                prompt_dir_input,
-                var_table,
-                workspace_config_status,
-            ],
+        add_unmapped_btn.click(
+            fn=add_unmapped_variables_ui,
+            inputs=[prompt_editor, var_table],
+            outputs=[var_table, combined_status, add_unmapped_btn, tabs],
         )
 
-        # Section 4: LLM Interaction
+        # Auto-save when table is edited
+        var_table.change(
+            fn=save_variable_table_ui,
+            inputs=[var_table],
+            outputs=[combined_status],
+        ).then(
+            fn=check_unmapped_variables,
+            inputs=[prompt_editor],
+            outputs=[combined_status, add_unmapped_btn],
+        )
+
+        # Section 3: LLM Interaction
         run_prompt_btn.click(
             fn=run_prompt_ui,
             inputs=[

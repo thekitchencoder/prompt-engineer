@@ -565,7 +565,7 @@ def create_ui():
                         interactive=False,
                     )
 
-            # Combined status area
+            # Status feedback (always visible below tabs)
             combined_status = gr.Textbox(
                 label="Status",
                 value=workspace_status_initial,

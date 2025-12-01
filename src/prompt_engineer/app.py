@@ -215,10 +215,22 @@ def refresh_workspace_config() -> tuple:
     return load_workspace_config_ui()
 
 
-def save_variable_table_ui(var_rows: List[List[str]]) -> str:
+def save_variable_table_ui(var_rows) -> str:
     """Save variable table data back to workspace config."""
-    if not var_rows:
-        # Empty table - clear all variables
+    import pandas as pd
+
+    # Handle pandas DataFrame from Gradio
+    if isinstance(var_rows, pd.DataFrame):
+        if var_rows.empty:
+            # Empty table - clear all variables
+            config = load_workspace_config(get_workspace_root())
+            config["variables"] = {}
+            return save_workspace_config(get_workspace_root(), config)
+
+        # Convert DataFrame to list of lists
+        var_rows = var_rows.values.tolist()
+    elif not var_rows:
+        # Empty list - clear all variables
         config = load_workspace_config(get_workspace_root())
         config["variables"] = {}
         return save_workspace_config(get_workspace_root(), config)
@@ -230,9 +242,10 @@ def save_variable_table_ui(var_rows: List[List[str]]) -> str:
         if not row or len(row) < 3:
             continue
 
-        var_name = row[0].strip()
-        var_type = row[1].strip()
-        source = row[2].strip()
+        # Convert to string and handle None values
+        var_name = str(row[0]).strip() if row[0] is not None else ""
+        var_type = str(row[1]).strip() if row[1] is not None else ""
+        source = str(row[2]).strip() if row[2] is not None else ""
 
         if not var_name:
             continue

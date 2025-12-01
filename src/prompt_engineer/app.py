@@ -482,14 +482,14 @@ def get_available_prompts() -> List[str]:
     return ["(none)"] + files
 
 
-def run_prompt_ui(
+def prepare_request_ui(
     system_prompt_file: str,
     user_prompt_file: str,
     model_override: str,
     temperature: float,
     max_tokens: int,
 ) -> tuple:
-    """Execute prompt and return formatted/raw responses."""
+    """Prepare request payload and display immediately (without calling API)."""
     # Load user config
     user_config = load_user_config()
     api_key = user_config.get("api_key", "")
@@ -514,14 +514,69 @@ def run_prompt_ui(
 
     # User prompt
     if not user_prompt_file or user_prompt_file == "(none)":
-        return "❌ User prompt required", {}, {}, "❌ User prompt required"
+        return {}, "⏳ Preparing request...", "❌ User prompt required"
 
     user_content = load_prompt_file(get_workspace_root(), prompt_dir, user_prompt_file)
     user_interpolated, unmapped = interpolate_prompt(user_content, get_workspace_root(), workspace_vars)
 
     if unmapped:
         error_msg = f"❌ Unmapped variables: {', '.join(unmapped)}"
-        return error_msg, {}, {}, error_msg
+        return {}, "", error_msg
+
+    messages.append({"role": "user", "content": user_interpolated})
+
+    # Build request payload (same as in call_llm_api)
+    request_payload = {
+        "model": model,
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+    }
+
+    # Return the request payload to display immediately
+    return request_payload, "⏳ Sending request to LLM provider...", "⏳ Waiting for response..."
+
+
+def execute_request_ui(
+    system_prompt_file: str,
+    user_prompt_file: str,
+    model_override: str,
+    temperature: float,
+    max_tokens: int,
+) -> tuple:
+    """Execute the API call and return formatted/raw responses."""
+    # Load user config
+    user_config = load_user_config()
+    api_key = user_config.get("api_key", "")
+    base_url = user_config.get("base_url", "")
+
+    # Determine model
+    model = model_override if model_override else user_config.get("defaults", {}).get("model", "gpt-4o")
+
+    # Load workspace config
+    workspace_config = load_workspace_config(get_workspace_root())
+    prompt_dir = workspace_config.get("paths", {}).get("prompts", "prompts")
+    workspace_vars = workspace_config.get("variables", {})
+
+    # Build messages
+    messages = []
+
+    # System prompt
+    if system_prompt_file and system_prompt_file != "(none)":
+        system_content = load_prompt_file(get_workspace_root(), prompt_dir, system_prompt_file)
+        system_interpolated, _ = interpolate_prompt(system_content, get_workspace_root(), workspace_vars)
+        messages.append({"role": "system", "content": system_interpolated})
+
+    # User prompt
+    if not user_prompt_file or user_prompt_file == "(none)":
+        return "❌ User prompt required", {}, "❌ User prompt required"
+
+    user_content = load_prompt_file(get_workspace_root(), prompt_dir, user_prompt_file)
+    user_interpolated, unmapped = interpolate_prompt(user_content, get_workspace_root(), workspace_vars)
+
+    if unmapped:
+        error_msg = f"❌ Unmapped variables: {', '.join(unmapped)}"
+        return error_msg, {}, error_msg
 
     messages.append({"role": "user", "content": user_interpolated})
 
@@ -549,7 +604,7 @@ def run_prompt_ui(
     else:
         status = f"✅ Success | Tokens: {total_tokens} (prompt: {prompt_tokens}, completion: {completion_tokens}) | Cost: ~{cost}"
 
-    return formatted_response, raw_request, raw_response, status
+    return formatted_response, raw_response, status
 
 
 # ============================================================================
@@ -885,8 +940,9 @@ def create_ui():
         )
 
         # Section 3: LLM Interaction
+        # First prepare and display the request immediately
         run_prompt_btn.click(
-            fn=run_prompt_ui,
+            fn=prepare_request_ui,
             inputs=[
                 system_prompt_dropdown,
                 user_prompt_dropdown,
@@ -894,7 +950,18 @@ def create_ui():
                 temperature_slider,
                 max_tokens_slider,
             ],
-            outputs=[formatted_response_md, raw_request_json, raw_response_json, llm_status],
+            outputs=[raw_request_json, formatted_response_md, llm_status],
+        ).then(
+            # Then execute the API call and update the response
+            fn=execute_request_ui,
+            inputs=[
+                system_prompt_dropdown,
+                user_prompt_dropdown,
+                model_override_dropdown,
+                temperature_slider,
+                max_tokens_slider,
+            ],
+            outputs=[formatted_response_md, raw_response_json, llm_status],
         )
 
     return demo

@@ -12,7 +12,8 @@ on:
 
 env:
   REGISTRY: docker.io
-  IMAGE_NAME: ${{ secrets.DOCKER_USERNAME }}/prompt-engineer
+  # Use DOCKER_USERNAME if available (for pushes to main), otherwise use 'local' (for PR builds)
+  IMAGE_NAME: ${{ secrets.DOCKER_USERNAME && format('{0}/prompt-engineer', secrets.DOCKER_USERNAME) || 'local/prompt-engineer' }}
 
 jobs:
   build-and-push:

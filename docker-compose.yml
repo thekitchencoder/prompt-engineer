@@ -9,9 +9,9 @@ services:
       - "7860:7860"
     volumes:
       # Mount your workspace directory (adjust path as needed)
-      - ./workspace:/workspace
+      - ./:/workspace
       # Persist user config
-      - prompt-engineer-config:/root/.prompt-engineer
+      - ~/.prompt-engineer:/root/.prompt-engineer
     environment:
       - PYTHONUNBUFFERED=1
     restart: unless-stopped

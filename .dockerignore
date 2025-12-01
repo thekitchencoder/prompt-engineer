@@ -55,3 +55,4 @@ Thumbs.db
 
 # Local configs and test data
 .prompt-engineer/
+examples/

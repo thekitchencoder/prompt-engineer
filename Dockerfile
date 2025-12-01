@@ -17,7 +17,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY prompt_engineer/ ./prompt_engineer/
 COPY pyproject.toml .
 COPY README.md .
-COPY CLAUDE.md .
 
 # Install the application
 RUN pip install -e .

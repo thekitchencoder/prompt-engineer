@@ -215,3 +215,6 @@ flagged/
 /.idea/modules.xml
 /.idea/prompt-engineer.iml
 /.idea/vcs.xml
+
+# Local dev
+/.prompt-engineer

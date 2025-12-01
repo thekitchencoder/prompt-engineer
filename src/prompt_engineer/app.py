@@ -561,19 +561,18 @@ def create_ui():
         with gr.Accordion("✏️ Prompt Editor & Variable Management", open=user_config_valid) as prompt_editor_section:
             gr.Markdown("### Edit Prompt Files")
 
-            prompt_dir_input = gr.Textbox(
-                label="Prompts Directory",
-                value=workspace_prompt_dir,
-                placeholder="prompts",
-            )
-
             with gr.Row():
+                prompt_dir_input = gr.Textbox(
+                    label="Prompts Directory",
+                    value=workspace_prompt_dir,
+                    placeholder="prompts",
+                    scale=1,
+                )
                 prompt_file_dropdown = gr.Dropdown(
                     choices=get_available_prompts(),
                     label="Select Prompt File",
-                    scale=4,
+                    scale=1,
                 )
-                refresh_all_btn = gr.Button("🔄 Refresh All", size="sm", scale=1)
 
             with gr.Tabs():
                 with gr.Tab("Editor"):
@@ -611,6 +610,8 @@ def create_ui():
                 interactive=False,
                 lines=2,
             )
+
+            refresh_all_btn = gr.Button("🔄 Refresh All", variant="secondary", size="sm")
 
         # ====================================================================
         # Section 3: LLM Interaction

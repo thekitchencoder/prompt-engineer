@@ -137,7 +137,7 @@ def save_user_config_ui(
     # Return status and values to sync LLM test section
     return (
         status,
-        gr.update(choices=models, value=""),  # model_override_dropdown
+        gr.update(choices=models, value=default_model),  # model_override_dropdown
         gr.update(value=temperature),  # temperature_slider
         gr.update(value=max_tokens),  # max_tokens_slider
     )
@@ -493,7 +493,7 @@ def get_available_prompts() -> List[str]:
 def prepare_request_ui(
     system_prompt_file: str,
     user_prompt_file: str,
-    model_override: str,
+    model: str,
     temperature: float,
     max_tokens: int,
 ) -> tuple:
@@ -502,9 +502,6 @@ def prepare_request_ui(
     user_config = load_user_config()
     api_key = user_config.get("api_key", "")
     base_url = user_config.get("base_url", "")
-
-    # Determine model
-    model = model_override if model_override else user_config.get("defaults", {}).get("model", "gpt-4o")
 
     # Load workspace config
     workspace_config = load_workspace_config(get_workspace_root())
@@ -548,7 +545,7 @@ def prepare_request_ui(
 def execute_request_ui(
     system_prompt_file: str,
     user_prompt_file: str,
-    model_override: str,
+    model: str,
     temperature: float,
     max_tokens: int,
 ) -> tuple:
@@ -557,9 +554,6 @@ def execute_request_ui(
     user_config = load_user_config()
     api_key = user_config.get("api_key", "")
     base_url = user_config.get("base_url", "")
-
-    # Determine model
-    model = model_override if model_override else user_config.get("defaults", {}).get("model", "gpt-4o")
 
     # Load workspace config
     workspace_config = load_workspace_config(get_workspace_root())
@@ -784,7 +778,8 @@ def create_ui():
                 with gr.Row():
                     model_override_dropdown = gr.Dropdown(
                         choices=user_config.get("models", []),
-                        label="Model Override (leave empty to use default)",
+                        value=user_config.get("defaults", {}).get("model", "gpt-4o"),
+                        label="Model",
                         allow_custom_value=True,
                     )
 

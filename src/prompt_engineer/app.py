@@ -569,6 +569,7 @@ def create_ui():
                 value=workspace_var_rows,
                 label="Defined Variables",
                 interactive=True,
+                datatype=["str", ["value", "file"], "str"],
             )
 
             with gr.Row():

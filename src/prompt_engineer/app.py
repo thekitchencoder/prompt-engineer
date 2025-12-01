@@ -321,7 +321,7 @@ def add_unmapped_variables_ui(prompt_content: str, var_rows) -> tuple:
     unmapped = [v for v in variables if v not in workspace_vars]
 
     if not unmapped:
-        return var_list, "ℹ️ No unmapped variables to add", gr.update(interactive=False)
+        return var_list, "ℹ️ No unmapped variables to add", gr.update(interactive=False), gr.Tabs()
 
     # Add unmapped variables as new rows
     for var_name in unmapped:
@@ -329,8 +329,8 @@ def add_unmapped_variables_ui(prompt_content: str, var_rows) -> tuple:
 
     status = f"✅ Added {len(unmapped)} unmapped variable(s): {', '.join(unmapped)}"
 
-    # Disable button after adding
-    return var_list, status, gr.update(interactive=False)
+    # Disable button after adding and switch to Variables tab
+    return var_list, status, gr.update(interactive=False), gr.Tabs(selected="variables_tab")
 
 
 def check_unmapped_variables(prompt_content: str) -> tuple:
@@ -633,7 +633,7 @@ def create_ui():
                     scale=1,
                 )
 
-            with gr.Tabs():
+            with gr.Tabs() as tabs:
                 with gr.Tab("Editor"):
                     prompt_editor = gr.Textbox(
                         label="Prompt Template (use {variable_name} syntax)",
@@ -642,7 +642,7 @@ def create_ui():
                     )
                     save_prompt_btn = gr.Button("💾 Save Prompt", variant="primary", size="sm")
 
-                with gr.Tab("Variables"):
+                with gr.Tab("Variables", id="variables_tab"):
                     gr.Markdown("Edit cells inline - changes auto-save. Delete variables by clearing the Name field.")
 
                     var_table = gr.Dataframe(
@@ -813,7 +813,7 @@ def create_ui():
         add_unmapped_btn.click(
             fn=add_unmapped_variables_ui,
             inputs=[prompt_editor, var_table],
-            outputs=[var_table, combined_status, add_unmapped_btn],
+            outputs=[var_table, combined_status, add_unmapped_btn, tabs],
         )
 
         # Auto-save when table is edited

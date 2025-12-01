@@ -232,19 +232,23 @@ def refresh_all_ui(prompt_dir: str, current_prompt_file: str) -> tuple:
         # Generate interpolated preview
         interpolated, _ = interpolate_prompt(content, get_workspace_root(), workspace_vars)
 
-        # Build status message
+        # Build status message and button state
         if unmapped:
             status = f"✅ Refreshed | ⚠️ Unmapped variables: {', '.join(unmapped)}"
+            button_state = gr.update(interactive=True)
         elif variables:
             status = f"✅ Refreshed | All variables mapped ({len(variables)}/{len(variables)})"
+            button_state = gr.update(interactive=False)
         else:
             status = f"✅ Refreshed | No variables found in prompt"
+            button_state = gr.update(interactive=False)
 
-        return prompt_dropdown_update, var_rows, content, interpolated, status
+        return prompt_dropdown_update, var_rows, content, interpolated, status, button_state
     else:
         # No prompt selected
         status = f"✅ Refreshed | Found {len(files)} prompt files"
-        return prompt_dropdown_update, var_rows, "", "", status
+        button_state = gr.update(interactive=False)
+        return prompt_dropdown_update, var_rows, "", "", status, button_state
 
 
 def save_variable_table_ui(var_rows) -> str:
@@ -296,6 +300,61 @@ def save_variable_table_ui(var_rows) -> str:
         result = f"✅ Saved {len(variables)} variables to workspace config"
 
     return result
+
+
+def add_unmapped_variables_ui(prompt_content: str, var_rows) -> tuple:
+    """Add all unmapped variables from the prompt to the variables table."""
+    import pandas as pd
+
+    # Handle pandas DataFrame from Gradio
+    if isinstance(var_rows, pd.DataFrame):
+        var_list = var_rows.values.tolist() if not var_rows.empty else []
+    else:
+        var_list = var_rows if var_rows else []
+
+    # Extract variables from prompt
+    variables = extract_variables(prompt_content)
+    config = load_workspace_config(get_workspace_root())
+    workspace_vars = config.get("variables", {})
+
+    # Find unmapped variables
+    unmapped = [v for v in variables if v not in workspace_vars]
+
+    if not unmapped:
+        return var_list, "ℹ️ No unmapped variables to add", gr.update(interactive=False)
+
+    # Add unmapped variables as new rows
+    for var_name in unmapped:
+        var_list.append([var_name, "value", ""])
+
+    status = f"✅ Added {len(unmapped)} unmapped variable(s): {', '.join(unmapped)}"
+
+    # Disable button after adding
+    return var_list, status, gr.update(interactive=False)
+
+
+def check_unmapped_variables(prompt_content: str) -> tuple:
+    """Check if there are unmapped variables and return status + button state."""
+    if not prompt_content:
+        return "ℹ️ No prompt loaded", gr.update(interactive=False)
+
+    variables = extract_variables(prompt_content)
+    config = load_workspace_config(get_workspace_root())
+    workspace_vars = config.get("variables", {})
+
+    unmapped = [v for v in variables if v not in workspace_vars]
+
+    if unmapped:
+        status = f"⚠️ Unmapped variables: {', '.join(unmapped)}"
+        button_state = gr.update(interactive=True)
+    elif variables:
+        status = f"✅ All variables mapped ({len(variables)}/{len(variables)})"
+        button_state = gr.update(interactive=False)
+    else:
+        status = "ℹ️ No variables found"
+        button_state = gr.update(interactive=False)
+
+    return status, button_state
 
 
 # ============================================================================
@@ -611,6 +670,13 @@ def create_ui():
                 lines=2,
             )
 
+            add_unmapped_btn = gr.Button(
+                "➕ Add All Unmapped Variables",
+                variant="secondary",
+                size="sm",
+                interactive=False,
+            )
+
             refresh_all_btn = gr.Button("🔄 Refresh All", variant="secondary", size="sm")
 
         # ====================================================================
@@ -706,13 +772,17 @@ def create_ui():
         refresh_all_btn.click(
             fn=refresh_all_ui,
             inputs=[prompt_dir_input, prompt_file_dropdown],
-            outputs=[prompt_file_dropdown, var_table, prompt_editor, prompt_preview, combined_status],
+            outputs=[prompt_file_dropdown, var_table, prompt_editor, prompt_preview, combined_status, add_unmapped_btn],
         )
 
         prompt_file_dropdown.change(
             fn=load_prompt_ui,
             inputs=[prompt_file_dropdown],
             outputs=[prompt_editor, prompt_preview, combined_status],
+        ).then(
+            fn=check_unmapped_variables,
+            inputs=[prompt_editor],
+            outputs=[combined_status, add_unmapped_btn],
         )
 
         prompt_editor.change(
@@ -722,9 +792,9 @@ def create_ui():
         )
 
         prompt_editor.change(
-            fn=validate_prompt_variables_ui,
+            fn=check_unmapped_variables,
             inputs=[prompt_editor],
-            outputs=[combined_status],
+            outputs=[combined_status, add_unmapped_btn],
         )
 
         save_prompt_btn.click(
@@ -740,11 +810,21 @@ def create_ui():
             outputs=[var_table, combined_status],
         )
 
+        add_unmapped_btn.click(
+            fn=add_unmapped_variables_ui,
+            inputs=[prompt_editor, var_table],
+            outputs=[var_table, combined_status, add_unmapped_btn],
+        )
+
         # Auto-save when table is edited
         var_table.change(
             fn=save_variable_table_ui,
             inputs=[var_table],
             outputs=[combined_status],
+        ).then(
+            fn=check_unmapped_variables,
+            inputs=[prompt_editor],
+            outputs=[combined_status, add_unmapped_btn],
         )
 
         # Section 3: LLM Interaction

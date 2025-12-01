@@ -415,6 +415,10 @@ def load_prompt_ui(filename: str) -> tuple:
 
 def save_prompt_ui(filename: str, content: str) -> str:
     """Save prompt file."""
+    # Validate filename
+    if not filename or filename.strip() == "" or filename == "(none)":
+        return "❌ Please enter a valid filename (cannot be empty or '(none)')"
+
     config = load_workspace_config(get_workspace_root())
     prompt_dir = config.get("paths", {}).get("prompts", "prompts")
 
@@ -637,8 +641,9 @@ def create_ui():
                 )
                 prompt_file_dropdown = gr.Dropdown(
                     choices=get_available_prompts(),
-                    label="Select Prompt File",
+                    label="Select Prompt File (or type new filename)",
                     scale=1,
+                    allow_custom_value=True,
                 )
 
             # Hidden state to track original prompt content

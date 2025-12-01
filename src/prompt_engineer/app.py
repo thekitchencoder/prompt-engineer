@@ -834,18 +834,17 @@ def create_ui():
             fn=update_interpolated_preview,
             inputs=[prompt_editor],
             outputs=[prompt_preview],
-        )
-
-        prompt_editor.change(
+            show_progress="hidden",
+        ).then(
             fn=check_unmapped_variables,
             inputs=[prompt_editor],
             outputs=[combined_status, add_unmapped_btn],
-        )
-
-        prompt_editor.change(
+            show_progress="hidden",
+        ).then(
             fn=check_prompt_changes,
             inputs=[prompt_editor, original_prompt_state],
             outputs=[save_prompt_btn],
+            show_progress="hidden",
         )
 
         save_prompt_btn.click(

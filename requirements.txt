@@ -1,3 +1,13 @@
+# Core dependencies
 gradio>=6.0.0
 openai>=1.0.0
 pyyaml>=6.0
+
+# Development dependencies (optional)
+# Install with: pip install -e ".[dev]"
+# Or individually:
+# pytest>=7.0.0
+# pytest-cov>=4.0.0
+# pytest-mock>=3.10.0
+# sphinx>=7.0.0
+# sphinx_rtd_theme>=2.0.0

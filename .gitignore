@@ -218,3 +218,8 @@ flagged/
 
 # Local dev
 /.prompt-engineer
+/.codery/ARCHITECTURE_ANALYSIS.md
+/.codery/IMPROVEMENTS_ROADMAP.md
+/.codery/VALUE_ANALYSIS_CLAUDE.md
+/.codery/VALUE_ANALYSIS_CODEX.md
+/.codery/VALUE_ANALYSIS_GEMINI.md

@@ -112,6 +112,31 @@ def load_models_from_provider(api_key: str, base_url: str) -> tuple:
         )
 
 
+def check_user_config_changes(
+    provider: str,
+    api_key: str,
+    base_url: str,
+    models: List[str],
+    default_model: str,
+    temperature: float,
+    max_tokens: int,
+    original_config: Dict[str, Any],
+) -> dict:
+    """Check if user config has been modified and return save button state."""
+    if (
+        provider != original_config.get("provider", "")
+        or api_key != original_config.get("api_key", "")
+        or base_url != original_config.get("base_url", "")
+        or models != original_config.get("models", [])
+        or default_model != original_config.get("defaults", {}).get("model", "")
+        or temperature != original_config.get("defaults", {}).get("temperature", 0.7)
+        or max_tokens != original_config.get("defaults", {}).get("max_tokens", 4000)
+    ):
+        return gr.update(interactive=True)
+    else:
+        return gr.update(interactive=False)
+
+
 def save_user_config_ui(
     provider: str,
     api_key: str,
@@ -120,8 +145,8 @@ def save_user_config_ui(
     default_model: str,
     temperature: float,
     max_tokens: int,
-) -> str:
-    """Save user configuration."""
+) -> tuple:
+    """Save user configuration and return values to sync LLM test section."""
     config = load_user_config()
 
     config["provider"] = provider
@@ -132,7 +157,15 @@ def save_user_config_ui(
     config["defaults"]["temperature"] = temperature
     config["defaults"]["max_tokens"] = max_tokens
 
-    return save_user_config(config)
+    status = save_user_config(config)
+
+    # Return status and values to sync LLM test section
+    return (
+        status,
+        gr.update(choices=models, value=default_model),  # model_override_dropdown
+        gr.update(value=temperature),  # temperature_slider
+        gr.update(value=max_tokens),  # max_tokens_slider
+    )
 
 
 # ============================================================================
@@ -482,21 +515,18 @@ def get_available_prompts() -> List[str]:
     return ["(none)"] + files
 
 
-def run_prompt_ui(
+def prepare_request_ui(
     system_prompt_file: str,
     user_prompt_file: str,
-    model_override: str,
+    model: str,
     temperature: float,
     max_tokens: int,
 ) -> tuple:
-    """Execute prompt and return formatted/raw responses."""
+    """Prepare request payload and display immediately (without calling API)."""
     # Load user config
     user_config = load_user_config()
     api_key = user_config.get("api_key", "")
     base_url = user_config.get("base_url", "")
-
-    # Determine model
-    model = model_override if model_override else user_config.get("defaults", {}).get("model", "gpt-4o")
 
     # Load workspace config
     workspace_config = load_workspace_config(get_workspace_root())
@@ -514,14 +544,66 @@ def run_prompt_ui(
 
     # User prompt
     if not user_prompt_file or user_prompt_file == "(none)":
-        return "❌ User prompt required", {}, {}, "❌ User prompt required"
+        return {}, "⏳ Preparing request...", "❌ User prompt required"
 
     user_content = load_prompt_file(get_workspace_root(), prompt_dir, user_prompt_file)
     user_interpolated, unmapped = interpolate_prompt(user_content, get_workspace_root(), workspace_vars)
 
     if unmapped:
         error_msg = f"❌ Unmapped variables: {', '.join(unmapped)}"
-        return error_msg, {}, {}, error_msg
+        return {}, "", error_msg
+
+    messages.append({"role": "user", "content": user_interpolated})
+
+    # Build request payload (same as in call_llm_api)
+    request_payload = {
+        "model": model,
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+    }
+
+    # Return the request payload to display immediately
+    return request_payload, "⏳ Sending request to LLM provider...", "⏳ Waiting for response..."
+
+
+def execute_request_ui(
+    system_prompt_file: str,
+    user_prompt_file: str,
+    model: str,
+    temperature: float,
+    max_tokens: int,
+) -> tuple:
+    """Execute the API call and return formatted/raw responses."""
+    # Load user config
+    user_config = load_user_config()
+    api_key = user_config.get("api_key", "")
+    base_url = user_config.get("base_url", "")
+
+    # Load workspace config
+    workspace_config = load_workspace_config(get_workspace_root())
+    prompt_dir = workspace_config.get("paths", {}).get("prompts", "prompts")
+    workspace_vars = workspace_config.get("variables", {})
+
+    # Build messages
+    messages = []
+
+    # System prompt
+    if system_prompt_file and system_prompt_file != "(none)":
+        system_content = load_prompt_file(get_workspace_root(), prompt_dir, system_prompt_file)
+        system_interpolated, _ = interpolate_prompt(system_content, get_workspace_root(), workspace_vars)
+        messages.append({"role": "system", "content": system_interpolated})
+
+    # User prompt
+    if not user_prompt_file or user_prompt_file == "(none)":
+        return "❌ User prompt required", {}, "❌ User prompt required"
+
+    user_content = load_prompt_file(get_workspace_root(), prompt_dir, user_prompt_file)
+    user_interpolated, unmapped = interpolate_prompt(user_content, get_workspace_root(), workspace_vars)
+
+    if unmapped:
+        error_msg = f"❌ Unmapped variables: {', '.join(unmapped)}"
+        return error_msg, {}, error_msg
 
     messages.append({"role": "user", "content": user_interpolated})
 
@@ -549,7 +631,7 @@ def run_prompt_ui(
     else:
         status = f"✅ Success | Tokens: {total_tokens} (prompt: {prompt_tokens}, completion: {completion_tokens}) | Cost: ~{cost}"
 
-    return formatted_response, raw_request, raw_response, status
+    return formatted_response, raw_response, status
 
 
 # ============================================================================
@@ -569,6 +651,9 @@ def create_ui():
         # ====================================================================
         # Section 1: User Config
         # ====================================================================
+
+        # Hidden state to track original user config
+        original_user_config_state = gr.State(value=user_config.copy())
 
         with gr.Accordion("⚙️ Configuration", open=not user_config_valid) as user_config_section:
             gr.Markdown("_(saved to `~/.prompt-engineer/config.yaml`)_")
@@ -637,7 +722,7 @@ def create_ui():
                     label="Max Tokens",
                 )
 
-            save_user_config_btn = gr.Button("💾 Save User Config", variant="primary")
+            save_user_config_btn = gr.Button("💾 Save User Config", variant="primary", interactive=False)
             user_config_status = gr.Textbox(label="Status", lines=2)
 
         # ====================================================================
@@ -721,7 +806,8 @@ def create_ui():
                 with gr.Row():
                     model_override_dropdown = gr.Dropdown(
                         choices=user_config.get("models", []),
-                        label="Model Override (leave empty to use default)",
+                        value=user_config.get("defaults", {}).get("model", "gpt-4o"),
+                        label="Model",
                         allow_custom_value=True,
                     )
 
@@ -795,8 +881,33 @@ def create_ui():
                 default_temperature,
                 default_max_tokens,
             ],
-            outputs=[user_config_status],
+            outputs=[user_config_status, model_override_dropdown, temperature_slider, max_tokens_slider],
+        ).then(
+            fn=lambda: load_user_config().copy(),  # Update original state after save
+            outputs=[original_user_config_state],
+        ).then(
+            fn=lambda: gr.update(interactive=False),  # Disable save button after save
+            outputs=[save_user_config_btn],
         )
+
+        # Add change handlers for all user config fields to enable save button
+        for component in [provider_dropdown, api_key_input, base_url_input, models_multiselect,
+                         default_model_dropdown, default_temperature, default_max_tokens]:
+            component.change(
+                fn=check_user_config_changes,
+                inputs=[
+                    provider_dropdown,
+                    api_key_input,
+                    base_url_input,
+                    models_multiselect,
+                    default_model_dropdown,
+                    default_temperature,
+                    default_max_tokens,
+                    original_user_config_state,
+                ],
+                outputs=[save_user_config_btn],
+                show_progress="hidden",
+            )
 
         # Section 2: Prompt Editor & Variable Management
         # Comprehensive refresh button
@@ -885,8 +996,9 @@ def create_ui():
         )
 
         # Section 3: LLM Interaction
+        # First prepare and display the request immediately
         run_prompt_btn.click(
-            fn=run_prompt_ui,
+            fn=prepare_request_ui,
             inputs=[
                 system_prompt_dropdown,
                 user_prompt_dropdown,
@@ -894,7 +1006,18 @@ def create_ui():
                 temperature_slider,
                 max_tokens_slider,
             ],
-            outputs=[formatted_response_md, raw_request_json, raw_response_json, llm_status],
+            outputs=[raw_request_json, formatted_response_md, llm_status],
+        ).then(
+            # Then execute the API call and update the response
+            fn=execute_request_ui,
+            inputs=[
+                system_prompt_dropdown,
+                user_prompt_dropdown,
+                model_override_dropdown,
+                temperature_slider,
+                max_tokens_slider,
+            ],
+            outputs=[formatted_response_md, raw_response_json, llm_status],
         )
 
     return demo
